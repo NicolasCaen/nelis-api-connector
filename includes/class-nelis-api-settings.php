@@ -8,6 +8,7 @@ class Nelis_API_Settings {
     public function __construct() {
         add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
         add_action( 'admin_init', array( $this, 'settings_init' ) );
+        add_action('wp_ajax_nelis_brevo_sync', [$this, 'ajax_sync']);
     }
 
     public function add_admin_menu() {
@@ -19,7 +20,23 @@ class Nelis_API_Settings {
             array( $this, 'options_page_html' )
         );
     }
-
+    // Ajouter ces méthodes à la classe
+    public function ajax_sync() {
+        if (!current_user_can('manage_options')) {
+            wp_die('Accès refusé');
+        }
+        
+        $synchronizer = new ContactSynchronizer();
+        $type = $_POST['sync_type'] ?? 'incremental';
+        
+        if ($type === 'full') {
+            $result = $synchronizer->full_sync();
+            wp_send_json_success("Synchronisation complète: $result contacts traités");
+        } else {
+            $synchronizer->incremental_sync();
+            wp_send_json_success("Synchronisation incrémentielle terminée");
+        }
+    }
     public function settings_init() {
         register_setting( 'nelis_api_connector_group', 'nelis_api_client_id' );
         register_setting( 'nelis_api_connector_group', 'nelis_api_client_secret' );

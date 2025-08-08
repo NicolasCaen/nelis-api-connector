@@ -1,10 +1,5 @@
 <?php
-/**
- * Plugin Name: Brevo Connector Config
- * Description: Configuration simple pour Brevo (clé API + ID de liste)
- * Version: 1.0.0
- * Author: GEHIN Nicolas
- */
+
 
 if (!defined('ABSPATH')) exit;
 
