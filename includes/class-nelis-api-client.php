@@ -60,7 +60,46 @@ class Nelis_API_Client {
    
         return false;
     }
+    public function get_adherents() {
+        if ( ! $this->access_token ) {
+            $this->get_access_token();
+        }
 
+        if ( ! $this->access_token ) {
+            return false;
+        }
+
+        $url = 'https://amavea.mynelis.com/api/v4/people?groups=12&with_custom_values=true';
+        $url = 'https://amavea.mynelis.com/api/v4/people?groups=12&range=600-700&with_custom_values=true&fields=id,email,lastname,firstname';
+
+
+     //2119
+     //1201
+     //1248
+ // $url = 'https://amavea.mynelis.com/api/v4/people/2119/customfieldsvalues';
+        $args = array(
+            'headers' => array(
+                'Authorization' => 'Bearer ' . $this->access_token,
+                'Content-Type' => 'application/json',
+            ),
+        );
+
+        $response = wp_remote_get( $url, $args );
+  
+        if ( is_wp_error( $response ) ) {
+            return false;
+        }
+
+        $response_code = wp_remote_retrieve_response_code( $response );
+        if ( $response_code !== 200 ) {
+            return false;
+        }
+
+        $body = wp_remote_retrieve_body( $response );
+        $data = json_decode( $body, true );
+
+        return $data;
+    }
     /**
      * Récupère tous les contacts avec un champ personnalisé de type date.
      */

@@ -15,6 +15,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-nelis-api-settings.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-nelis-api-client.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-nelis-api-shortcode.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-brevo-connector.php';
 
 // Initialiser les classes
 function nelis_api_connector_init() {

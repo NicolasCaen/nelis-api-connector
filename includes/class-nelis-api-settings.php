@@ -118,7 +118,7 @@ class Nelis_API_Settings {
                 submit_button( 'Sauvegarder les modifications' );
                 ?>
             </form> 
-            <?php echo do_shortcode('[nelis_contact id="2141"]') ?>
+            <?php echo do_shortcode('[nelis_adherents]') ?>
             
         </div>
         <?php

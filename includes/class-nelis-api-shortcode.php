@@ -8,6 +8,7 @@ class Nelis_API_Shortcode {
     public function __construct() {
         add_shortcode( 'nelis_contacts', array( $this, 'display_contacts_shortcode' ) );
         add_shortcode( 'nelis_contact', array( $this, 'display_contact_by_id_shortcode' ) );
+        add_shortcode( 'nelis_adherents', array( $this, 'display_adherents_shortcode' ) );
         add_shortcode( 'nelis_contacts_by_date', array( $this, 'display_contacts_by_date_shortcode' ) );
         add_shortcode( 'nelis_contacts_created_since', array( $this, 'display_contacts_created_since_shortcode' ) );
         add_shortcode( 'nelis_contacts_updated_since', array( $this, 'display_contacts_updated_since_shortcode' ) );
@@ -26,6 +27,21 @@ class Nelis_API_Shortcode {
             return '<p>Aucun contact trouvé ou erreur lors de la récupération des données.</p>';
         }
 
+        return $this->format_contacts_output( $contacts );
+    }
+    public function display_adherents_shortcode( $atts ) {
+        $api_client = new Nelis_API_Client();
+    
+        $contacts = $api_client->get_adherents();
+
+        if ( ! $contacts ) {
+            return '<p>Aucun contact trouvé ou erreur lors de la récupération des données.</p>';
+        }
+        ?>
+        <pre>
+<?php var_dump($contacts); ?>
+    </pre>
+    <?php
         return $this->format_contacts_output( $contacts );
     }
     public function display_contact_by_id_shortcode( $atts ) {
