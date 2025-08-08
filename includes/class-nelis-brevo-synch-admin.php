@@ -6,9 +6,17 @@
 class NelisBrevoSyncAdmin {
     
     private $synchronizer;
+    private $hidden_fields = [];
     
     public function __construct() {
         $this->synchronizer = new ContactSynchronizer();
+        
+        // S'assurer que la table de synchronisation existe
+        $this->ensure_sync_table_exists();
+        
+        // Charger les champs cachés
+        $this->hidden_fields = get_option('nelis_brevo_hidden_fields', []);
+        
         add_action('admin_menu', [$this, 'add_admin_menu']);
         add_action('admin_init', [$this, 'handle_actions']);
         add_action('wp_ajax_nelis_brevo_sync', [$this, 'ajax_sync']);
@@ -32,134 +40,165 @@ class NelisBrevoSyncAdmin {
             return;
         }
         
-        wp_enqueue_script('jquery');
         ?>
         <script type="text/javascript">
-        jQuery(document).ready(function($) {
-            // Synchronisation
-            $('.sync-button').on('click', function(e) {
+        document.addEventListener('DOMContentLoaded', function() {
+            // Debug - Vérifier si les boutons existent
+            const syncButtons = document.querySelectorAll('.sync-button');
+            console.log('Boutons de synchronisation trouvés:', syncButtons.length);
+            
+            // Fonction pour gérer la synchronisation
+            function handleSyncClick(e) {
                 e.preventDefault();
-                var button = $(this);
-                var syncType = button.data('sync-type');
+                console.log('Bouton de synchronisation cliqué');
                 
-                button.prop('disabled', true).text('Synchronisation en cours...');
-                $('#sync-status').html('<div class="notice notice-info"><p>Synchronisation en cours...</p></div>');
+                const button = e.currentTarget;
+                const syncType = button.getAttribute('data-sync-type');
+                const originalText = button.getAttribute('data-original-text') || button.textContent;
                 
-                $.post(ajaxurl, {
-                    action: 'nelis_brevo_sync',
-                    sync_type: syncType,
-                    _ajax_nonce: '<?php echo wp_create_nonce("nelis_brevo_sync"); ?>'
-                }, function(response) {
+                console.log('Type de synchronisation:', syncType);
+                console.log('Bouton:', button.className, button.textContent);
+                
+                button.disabled = true;
+                button.textContent = 'Synchronisation en cours...';
+                
+                const syncStatus = document.getElementById('sync-status');
+                syncStatus.innerHTML = '<div class="notice notice-info"><p>Synchronisation en cours...</p></div>';
+                
+                // Vérifier que ajaxurl est défini
+                if (typeof ajaxurl === 'undefined') {
+                    console.error('ajaxurl n\'est pas défini');
+                    syncStatus.innerHTML = '<div class="notice notice-error"><p>Erreur: ajaxurl n\'est pas défini</p></div>';
+                    button.disabled = false;
+                    button.textContent = originalText;
+                    return;
+                }
+                
+                // Créer les données du formulaire
+                const formData = new FormData();
+                formData.append('action', 'nelis_brevo_sync');
+                formData.append('sync_type', syncType);
+                formData.append('_ajax_nonce', '<?php echo wp_create_nonce("nelis_brevo_sync"); ?>');
+                
+                // Envoyer la requête AJAX
+                fetch(ajaxurl, {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'same-origin'
+                })
+                .then(response => response.json())
+                .then(response => {
+                    console.log('Réponse reçue:', response);
                     if (response.success) {
-                        $('#sync-status').html('<div class="notice notice-success"><p>' + response.data + '</p></div>');
+                        syncStatus.innerHTML = '<div class="notice notice-success"><p>' + response.data + '</p></div>';
                         setTimeout(function() {
                             location.reload();
                         }, 2000);
                     } else {
-                        $('#sync-status').html('<div class="notice notice-error"><p>Erreur: ' + response.data + '</p></div>');
+                        syncStatus.innerHTML = '<div class="notice notice-error"><p>Erreur: ' + response.data + '</p></div>';
                     }
-                }).fail(function() {
-                    $('#sync-status').html('<div class="notice notice-error"><p>Erreur de connexion</p></div>');
-                }).always(function() {
-                    button.prop('disabled', false).text(button.data('original-text'));
+                })
+                .catch(error => {
+                    console.error('Erreur:', error);
+                    syncStatus.innerHTML = '<div class="notice notice-error"><p>Erreur de connexion</p></div>';
+                })
+                .finally(() => {
+                    button.disabled = false;
+                    button.textContent = originalText;
                 });
-            });
+            }
             
-            // Retry contacts en erreur
-            $('#retry-failed').on('click', function(e) {
+            // Fonction pour gérer le retry des contacts en erreur
+            function handleRetryClick(e) {
                 e.preventDefault();
-                var button = $(this);
+                const button = e.currentTarget;
+                const originalText = button.textContent;
                 
-                button.prop('disabled', true).text('Retry en cours...');
+                button.disabled = true;
+                button.textContent = 'Retry en cours...';
                 
-                $.post(ajaxurl, {
-                    action: 'retry_failed_contacts',
-                    _ajax_nonce: '<?php echo wp_create_nonce("retry_failed"); ?>'
-                }, function(response) {
+                const syncStatus = document.getElementById('sync-status');
+                
+                // Créer les données du formulaire
+                const formData = new FormData();
+                formData.append('action', 'retry_failed_contacts');
+                formData.append('_ajax_nonce', '<?php echo wp_create_nonce("retry_failed"); ?>');
+                
+                // Envoyer la requête AJAX
+                fetch(ajaxurl, {
+                    method: 'POST',
+                    body: formData,
+                    credentials: 'same-origin'
+                })
+                .then(response => response.json())
+                .then(response => {
                     if (response.success) {
-                        $('#sync-status').html('<div class="notice notice-success"><p>' + response.data + '</p></div>');
+                        syncStatus.innerHTML = '<div class="notice notice-success"><p>' + response.data + '</p></div>';
                         setTimeout(function() {
                             location.reload();
                         }, 1500);
                     } else {
-                        $('#sync-status').html('<div class="notice notice-error"><p>Erreur: ' + response.data + '</p></div>');
+                        syncStatus.innerHTML = '<div class="notice notice-error"><p>Erreur: ' + response.data + '</p></div>';
                     }
-                }).always(function() {
-                    button.prop('disabled', false).text('Relancer les échecs');
+                })
+                .catch(error => {
+                    syncStatus.innerHTML = '<div class="notice notice-error"><p>Erreur de connexion: ' + error.message + '</p></div>';
+                })
+                .finally(() => {
+                    button.disabled = false;
+                    button.textContent = 'Relancer les échecs';
                 });
+            }
+            
+            // Attacher les gestionnaires d'événements aux boutons
+            syncButtons.forEach(button => {
+                button.addEventListener('click', handleSyncClick);
             });
             
-            // Stocker le texte original des boutons
-            $('.sync-button').each(function() {
-                $(this).data('original-text', $(this).text());
-            });
+            const retryButton = document.getElementById('retry-failed-button');
+            if (retryButton) {
+                retryButton.addEventListener('click', handleRetryClick);
+            }
+            
+            // Fonction de recherche pour filtrer les contacts
+            const searchInput = document.getElementById('contact-search');
+            if (searchInput) {
+                searchInput.addEventListener('input', function() {
+                    const searchTerm = this.value.toLowerCase();
+                    const table = document.getElementById('contacts-table');
+                    if (!table) return;
+                    
+                    const rows = table.querySelectorAll('tbody tr');
+                    if (!rows.length) return;
+                    
+                    rows.forEach(function(row) {
+                        let found = false;
+                        const cells = row.querySelectorAll('td');
+                        
+                        cells.forEach(function(cell) {
+                            if (cell.textContent.toLowerCase().includes(searchTerm)) {
+                                found = true;
+                            }
+                        });
+                        
+                        row.style.display = found ? '' : 'none';
+                    });
+                });
+            }
         });
         </script>
-        
-        <style>
-        .sync-stats {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 20px;
-            margin: 20px 0;
-        }
-        .stat-box {
-            background: #fff;
-            border: 1px solid #c3c4c7;
-            border-radius: 4px;
-            padding: 20px;
-            text-align: center;
-        }
-        .stat-number {
-            font-size: 32px;
-            font-weight: bold;
-            color: #1d2327;
-            line-height: 1;
-        }
-        .stat-label {
-            color: #646970;
-            font-size: 14px;
-            margin-top: 8px;
-        }
-        .stat-box.synced .stat-number { color: #00a32a; }
-        .stat-box.pending .stat-number { color: #dba617; }
-        .stat-box.error .stat-number { color: #d63638; }
-        .contacts-table { margin-top: 20px; }
-        .status-badge {
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-size: 12px;
-            font-weight: 500;
-        }
-        .status-synced { background: #d1e7dd; color: #0a3622; }
-        .status-pending { background: #fff3cd; color: #664d03; }
-        .status-error { background: #f8d7da; color: #58151c; }
-        .sync-actions { margin: 20px 0; }
-        .sync-actions .button { margin-right: 10px; }
-        </style>
         <?php
     }
     
-    public function handle_actions() {
-        if (!current_user_can('manage_options')) {
-            return;
-        }
-        
-        if (isset($_POST['clear_sync_table'])) {
-            check_admin_referer('clear_sync_table');
-            global $wpdb;
-            $table_name = $wpdb->prefix . 'nelis_brevo_sync';
-            $wpdb->query("TRUNCATE TABLE $table_name");
-            add_settings_error('nelis_brevo_sync', 'table_cleared', 'Table de synchronisation vidée', 'updated');
-        }
-    }
-    
-    public function ajax_sync() {
+    public function display_admin_page() {
         check_ajax_referer('nelis_brevo_sync');
         
         if (!current_user_can('manage_options')) {
             wp_send_json_error('Accès refusé');
         }
+        
+        // S'assurer que la table existe avant de synchroniser
+        $this->ensure_sync_table_exists();
         
         $type = $_POST['sync_type'] ?? 'incremental';
         
@@ -172,6 +211,7 @@ class NelisBrevoSyncAdmin {
                 wp_send_json_success("Synchronisation incrémentielle terminée");
             }
         } catch (Exception $e) {
+            $this->log("Erreur de synchronisation: " . $e->getMessage());
             wp_send_json_error($e->getMessage());
         }
     }
@@ -184,6 +224,12 @@ class NelisBrevoSyncAdmin {
         }
         
         global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            wp_send_json_error("Erreur: Base de données non disponible");
+            return;
+        }
+        
         $table_name = $wpdb->prefix . 'nelis_brevo_sync';
         
         // Remettre les contacts en erreur en statut pending
@@ -193,16 +239,61 @@ class NelisBrevoSyncAdmin {
             ['brevo_status' => 'error']
         );
         
-        // Relancer la synchronisation
-        $this->synchronizer->sync_to_brevo();
+        if ($updated === false) {
+            $this->log("Erreur lors de la mise à jour des contacts en erreur");
+            wp_send_json_error("Erreur lors de la mise à jour des contacts");
+            return;
+        }
         
-        wp_send_json_success("$updated contacts remis en file d'attente et synchronisation relancée");
+        // Relancer la synchronisation
+        try {
+            $this->synchronizer->sync_to_brevo();
+            wp_send_json_success("$updated contacts remis en file d'attente et synchronisation relancée");
+        } catch (Exception $e) {
+            $this->log("Erreur lors de la relance des contacts en échec: " . $e->getMessage());
+            wp_send_json_error($e->getMessage());
+        }
     }
     
     public function admin_page() {
         $stats = $this->synchronizer->get_sync_stats();
-        $contacts = $this->get_contacts_for_display();
+        
+        // Récupérer tous les contacts sans limite
+        $contacts = $this->get_contacts_for_display(null);
         $last_sync = get_option('nelis_brevo_last_sync', 'Jamais');
+        
+        // Récupérer la structure de la table pour afficher tous les champs personnalisés
+        global $wpdb;
+        $table_name = '';
+        $table_structure = [];
+        $custom_fields = [];
+        
+        // Vérifier si $wpdb est disponible (il devrait l'être dans WordPress)
+        if ($wpdb) {
+            $table_name = $wpdb->prefix . 'nelis_brevo_sync';
+            $table_structure = $wpdb->get_results("DESCRIBE $table_name");
+            
+            // Si la requête échoue, initialiser un tableau vide
+            if (!$table_structure) {
+                $table_structure = [];
+            } else {
+                // Extraire les champs personnalisés
+                foreach ($table_structure as $column) {
+                    if (strpos($column->Field, 'custom_') === 0) {
+                        $custom_fields[] = $column->Field;
+                    }
+                }
+            }
+        }
+        
+        // Traitement du formulaire de configuration des champs cachés
+        if (isset($_POST['action']) && $_POST['action'] === 'update_hidden_fields') {
+            check_admin_referer('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce');
+            $hidden_fields = isset($_POST['hidden_fields']) ? (array) $_POST['hidden_fields'] : [];
+            update_option('nelis_brevo_hidden_fields', $hidden_fields);
+            $this->hidden_fields = $hidden_fields;
+            add_settings_error('nelis_brevo_sync', 'fields_updated', 'Configuration des champs mise à jour', 'success');
+        }
         
         ?>
         <div class="wrap">
@@ -213,109 +304,160 @@ class NelisBrevoSyncAdmin {
             <!-- Statistiques -->
             <div class="sync-stats">
                 <div class="stat-box">
-                    <div class="stat-number"><?php echo $stats['total']; ?></div>
-                    <div class="stat-label">Total contacts</div>
+                    <h3>Statistiques</h3>
+                    <p>Total des contacts: <?php echo esc_html($stats['total'] ?? 0); ?></p>
+                    <p>Contacts synchronisés: <?php echo esc_html($stats['synced'] ?? 0); ?></p>
+                    <p>Contacts en attente: <?php echo esc_html($stats['pending'] ?? 0); ?></p>
+                    <p>Contacts en erreur: <?php echo esc_html($stats['error'] ?? 0); ?></p>
+                    <p>Dernière synchronisation: <?php echo esc_html($last_sync); ?></p>
                 </div>
-                <div class="stat-box synced">
-                    <div class="stat-number"><?php echo $stats['synced']; ?></div>
-                    <div class="stat-label">Synchronisés</div>
-                </div>
-                <div class="stat-box pending">
-                    <div class="stat-number"><?php echo $stats['pending']; ?></div>
-                    <div class="stat-label">En attente</div>
-                </div>
-                <div class="stat-box error">
-                    <div class="stat-number"><?php echo $stats['errors']; ?></div>
-                    <div class="stat-label">Erreurs</div>
+                
+                <div class="stat-box">
+                    <h3>Actions</h3>
+                    <p>
+                        <button class="button button-primary sync-button" data-sync-type="incremental" data-original-text="Synchronisation incrémentielle">
+                            Synchronisation incrémentielle
+                        </button>
+                    </p>
+                    <p>
+                        <button class="button sync-button" data-sync-type="full" data-original-text="Synchronisation complète">
+                            Synchronisation complète
+                        </button>
+                    </p>
+                    <?php if (($stats['error'] ?? 0) > 0): ?>
+                    <p>
+                        <button id="retry-failed-button" class="button">Relancer les échecs</button>
+                    </p>
+                    <?php endif; ?>
+                    
+                    <!-- Bouton pour vider la table -->
+                    <p style="margin-top: 20px;">
+                        <form method="post" action="" onsubmit="return confirm('Attention : Cette action va supprimer toutes les données de synchronisation. Continuer ?');">
+                            <?php wp_nonce_field('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce'); ?>
+                            <input type="hidden" name="action" value="truncate_table">
+                            <button type="submit" class="button button-secondary" style="color: #a00;">
+                                Vider la table de synchronisation
+                            </button>
+                        </form>
+                    </p>
+                    
+                    <!-- Configuration des champs cachés -->
+                    <?php if (!empty($custom_fields)): ?>
+                    <div style="margin-top: 20px;">
+                        <h4>Configuration des champs personnalisés</h4>
+                        <form method="post" action="">
+                            <?php wp_nonce_field('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce'); ?>
+                            <input type="hidden" name="action" value="update_hidden_fields">
+                            <p>Sélectionnez les champs à masquer:</p>
+                            <?php foreach ($custom_fields as $field): ?>
+                                <?php $field_name = str_replace('custom_', '', $field); ?>
+                                <label style="display: block; margin-bottom: 5px;">
+                                    <input type="checkbox" name="hidden_fields[]" value="<?php echo esc_attr($field); ?>" 
+                                        <?php checked(in_array($field, $this->hidden_fields)); ?>>
+                                    <?php echo esc_html($field_name); ?>
+                                </label>
+                            <?php endforeach; ?>
+                            <p><input type="submit" class="button" value="Enregistrer la configuration"></p>
+                        </form>
+                    </div>
+                    <?php endif; ?>
                 </div>
             </div>
             
-            <div class="card">
-                <h3>Actions de synchronisation</h3>
-                <div class="sync-actions">
-                    <button type="button" class="button button-primary sync-button" data-sync-type="incremental">
-                        Synchronisation incrémentielle
-                    </button>
-                    <button type="button" class="button button-secondary sync-button" data-sync-type="full">
-                        Synchronisation complète
-                    </button>
-                    
-                    <?php if ($stats['errors'] > 0): ?>
-                    <button type="button" class="button" id="retry-failed">
-                        Relancer les échecs (<?php echo $stats['errors']; ?>)
-                    </button>
-                    <?php endif; ?>
-                </div>
-                
-                <p><strong>Dernière synchronisation :</strong> <?php echo $last_sync; ?></p>
-                
-                <details>
-                    <summary style="cursor: pointer; margin: 10px 0;"><strong>Actions avancées</strong></summary>
-                    <form method="post" style="margin-top: 10px;">
-                        <?php wp_nonce_field('clear_sync_table'); ?>
-                        <input type="submit" name="clear_sync_table" class="button button-link-delete" 
-                               value="Vider la table de synchronisation" 
-                               onclick="return confirm('Êtes-vous sûr ? Cela supprimera tous les données de synchronisation.');">
-                    </form>
-                </details>
+            <!-- Recherche -->
+            <div style="margin: 20px 0;">
+                <input type="text" id="contact-search" placeholder="Rechercher un contact..." style="width: 300px; padding: 8px;">
             </div>
             
             <!-- Tableau des contacts -->
-            <div class="contacts-table">
-                <h3>Contacts récents (50 derniers)</h3>
-                
-                <?php if (empty($contacts)): ?>
-                    <p>Aucun contact trouvé. Lancez une synchronisation pour commencer.</p>
-                <?php else: ?>
-                    <table class="wp-list-table widefat fixed striped">
-                        <thead>
+            <div class="contacts-table-container" style="overflow-x: auto;">
+                <table id="contacts-table" class="wp-list-table widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th>ID Nelis</th>
+                            <th>Email</th>
+                            <th>Nom</th>
+                            <th>Prénom</th>
+                            <th>Statut Brevo</th>
+                            <th>Date création</th>
+                            <th>Date mise à jour</th>
+                            <?php
+                            // Afficher les en-têtes pour les champs personnalisés
+                            if (!empty($table_structure)) {
+                                foreach ($table_structure as $column) {
+                                    if (strpos($column->Field, 'custom_') === 0 && !in_array($column->Field, $this->hidden_fields)) {
+                                        echo '<th>' . esc_html(str_replace('custom_', '', $column->Field)) . '</th>';
+                                    }
+                                }
+                            }
+                            ?>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php foreach ($contacts as $contact): ?>
                             <tr>
-                                <th>ID Nelis</th>
-                                <th>Email</th>
-                                <th>Nom</th>
-                                <th>Prénom</th>
-                                <th>Statut Brevo</th>
-                                <th>Dernière sync</th>
-                                <th>Créé le</th>
+                                <td><?php echo esc_html($contact->nelis_id); ?></td>
+                                <td><?php echo esc_html($contact->email); ?></td>
+                                <td><?php echo esc_html($contact->lastname); ?></td>
+                                <td><?php echo esc_html($contact->firstname); ?></td>
+                                <td>
+                                    <span class="status-badge status-<?php echo esc_attr($contact->brevo_status); ?>">
+                                        <?php echo esc_html($contact->brevo_status); ?>
+                                    </span>
+                                </td>
+                                <td><?php echo esc_html($contact->created_at); ?></td>
+                                <td><?php echo esc_html($contact->updated_at); ?></td>
+                                <?php
+                                // Afficher les valeurs des champs personnalisés
+                                if (!empty($table_structure)) {
+                                    foreach ($table_structure as $column) {
+                                        if (strpos($column->Field, 'custom_') === 0 && !in_array($column->Field, $this->hidden_fields)) {
+                                            $field = $column->Field;
+                                            echo '<td>' . (isset($contact->$field) ? esc_html($contact->$field) : '') . '</td>';
+                                        }
+                                    }
+                                }
+                                ?>
                             </tr>
-                        </thead>
-                        <tbody>
-                            <?php foreach ($contacts as $contact): ?>
-                                <tr>
-                                    <td><?php echo esc_html($contact->nelis_id); ?></td>
-                                    <td><?php echo esc_html($contact->email); ?></td>
-                                    <td><?php echo esc_html($contact->lastname); ?></td>
-                                    <td><?php echo esc_html($contact->firstname); ?></td>
-                                    <td>
-                                        <span class="status-badge status-<?php echo esc_attr($contact->brevo_status); ?>">
-                                            <?php 
-                                            switch($contact->brevo_status) {
-                                                case 'synced': echo 'Synchronisé'; break;
-                                                case 'pending': echo 'En attente'; break;
-                                                case 'error': echo 'Erreur'; break;
-                                                default: echo ucfirst($contact->brevo_status);
-                                            }
-                                            ?>
-                                        </span>
-                                    </td>
-                                    <td>
-                                        <?php 
-                                        echo $contact->last_sync ? 
-                                            date('d/m/Y H:i', strtotime($contact->last_sync)) : 
-                                            'Jamais'; 
-                                        ?>
-                                    </td>
-                                    <td><?php echo date('d/m/Y H:i', strtotime($contact->created_at)); ?></td>
-                                </tr>
-                            <?php endforeach; ?>
-                        </tbody>
-                    </table>
-                    
-                    <?php if ($stats['total'] > 50): ?>
-                        <p><em>Affichage des 50 contacts les plus récents sur <?php echo $stats['total']; ?> total.</em></p>
-                    <?php endif; ?>
-                <?php endif; ?>
+                        <?php endforeach; ?>
+                    </tbody>
+                </table>
             </div>
+            
+            <style>
+            .sync-stats {
+                display: flex;
+                gap: 20px;
+                margin-bottom: 20px;
+            }
+            .stat-box {
+                background: #fff;
+                border: 1px solid #ccd0d4;
+                padding: 15px;
+                border-radius: 4px;
+                flex: 1;
+            }
+            .status-badge {
+                display: inline-block;
+                padding: 3px 8px;
+                border-radius: 3px;
+                font-size: 12px;
+                font-weight: bold;
+                text-transform: uppercase;
+            }
+            .status-synced {
+                background: #d4edda;
+                color: #155724;
+            }
+            .status-pending {
+                background: #fff3cd;
+                color: #856404;
+            }
+            .status-error {
+                background: #f8d7da;
+                color: #721c24;
+            }
+            </style>
             
             <!-- Logs récents -->
             <div class="card" style="margin-top: 20px;">
@@ -328,14 +470,61 @@ class NelisBrevoSyncAdmin {
         <?php
     }
     
-    private function get_contacts_for_display($limit = 50) {
+    /**
+     * Récupère tous les contacts pour l'affichage dans l'interface d'administration
+     * 
+     * @param int|null $limit Limite du nombre de contacts à récupérer (null pour tous)
+     * @return array Tableau des contacts avec tous leurs champs
+     */
+    private function get_contacts_for_display($limit = null) {
         global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return [];
+        }
+        
         $table_name = $wpdb->prefix . 'nelis_brevo_sync';
         
-        return $wpdb->get_results($wpdb->prepare(
-            "SELECT * FROM $table_name ORDER BY created_at DESC LIMIT %d",
-            $limit
-        ));
+        // Récupérer tous les contacts sans limite
+        if ($limit === null) {
+            return $wpdb->get_results("SELECT * FROM $table_name ORDER BY created_at DESC") ?: [];
+        } else {
+            return $wpdb->get_results($wpdb->prepare(
+                "SELECT * FROM $table_name ORDER BY created_at DESC LIMIT %d",
+                $limit
+            )) ?: [];
+        }
+    }
+    
+    /**
+     * S'assure que la table de synchronisation existe
+     */
+    private function ensure_sync_table_exists() {
+        global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return;
+        }
+        
+        $table_name = $wpdb->prefix . 'nelis_brevo_sync';
+        
+        // Vérifier si la table existe
+        $table_exists = $wpdb->get_var("SHOW TABLES LIKE '$table_name'") === $table_name;
+        
+        if (!$table_exists) {
+            // La table n'existe pas, on la crée
+            $this->synchronizer->create_sync_table();
+            $this->log("Table de synchronisation créée: $table_name");
+        }
+    }
+    
+    /**
+     * Ajoute un message au log
+     */
+    private function log($message) {
+        if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+            error_log("[Nelis-Brevo Sync] " . $message);
+        }
     }
     
     private function display_recent_logs() {
@@ -344,20 +533,195 @@ class NelisBrevoSyncAdmin {
         
         if (file_exists($log_file)) {
             $lines = file($log_file);
-            $recent_lines = array_slice($lines, -20); // 20 dernières lignes
-            $sync_lines = array_filter($recent_lines, function($line) {
-                return strpos($line, '[Nelis-Brevo Sync]') !== false;
-            });
-            
-            if (!empty($sync_lines)) {
-                foreach (array_reverse($sync_lines) as $line) {
-                    echo esc_html($line) . "<br>";
+            if (!empty($lines)) {
+                $recent_lines = array_slice($lines, -20); // 20 dernières lignes
+                $sync_lines = array_filter($recent_lines, function($line) {
+                    return is_string($line) && strpos($line, '[Nelis-Brevo Sync]') !== false;
+                });
+                
+                if (!empty($sync_lines)) {
+                    foreach (array_reverse($sync_lines) as $line) {
+                        echo esc_html($line) . "<br>";
+                    }
+                } else {
+                    echo "Aucun log de synchronisation récent trouvé.";
                 }
             } else {
-                echo "Aucun log de synchronisation récent trouvé.";
+                echo "Fichier de log vide.";
             }
         } else {
             echo "Fichier de log non trouvé. Activez WP_DEBUG_LOG dans wp-config.php pour voir les logs.";
+        }
+    }
+    
+    /**
+     * Gère les actions de l'admin (formulaires soumis, etc.)
+     */
+    public function handle_actions() {
+        // Vérifier si nous sommes sur la page d'administration de notre plugin
+        $page = $_GET['page'] ?? '';
+        if ($page !== 'nelis-brevo-sync') {
+            return;
+        }
+        
+        // Vérifier si une action a été soumise
+        if (isset($_POST['action']) && check_admin_referer('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce')) {
+            switch ($_POST['action']) {
+                case 'manual_sync':
+                    if (isset($_POST['sync_type']) && in_array($_POST['sync_type'], ['full', 'incremental'])) {
+                        $type = $_POST['sync_type'];
+                        
+                        try {
+                            if ($type === 'full') {
+                                $result = $this->synchronizer->full_sync();
+                                add_settings_error(
+                                    'nelis_brevo_sync',
+                                    'sync_success',
+                                    "Synchronisation complète: $result contacts traités",
+                                    'success'
+                                );
+                            } else {
+                                $this->synchronizer->incremental_sync();
+                                add_settings_error(
+                                    'nelis_brevo_sync',
+                                    'sync_success',
+                                    "Synchronisation incrémentielle terminée",
+                                    'success'
+                                );
+                            }
+                        } catch (Exception $e) {
+                            $this->log("Erreur de synchronisation: " . $e->getMessage());
+                            add_settings_error(
+                                'nelis_brevo_sync',
+                                'sync_error',
+                                "Erreur de synchronisation: " . $e->getMessage(),
+                                'error'
+                            );
+                        }
+                    }
+                    break;
+                    
+                case 'retry_failed':
+                    global $wpdb;
+                    if (!$wpdb) {
+                        $this->log("Erreur: Objet wpdb non disponible");
+                        add_settings_error(
+                            'nelis_brevo_sync',
+                            'db_error',
+                            "Erreur: Base de données non disponible",
+                            'error'
+                        );
+                        break;
+                    }
+                    
+                    $table_name = $wpdb->prefix . 'nelis_brevo_sync';
+                    
+                    // Remettre les contacts en erreur en statut pending
+                    $updated = $wpdb->update(
+                        $table_name,
+                        ['brevo_status' => 'pending'],
+                        ['brevo_status' => 'error']
+                    );
+                    
+                    if ($updated === false) {
+                        $this->log("Erreur lors de la mise à jour des contacts en erreur");
+                        add_settings_error(
+                            'nelis_brevo_sync',
+                            'update_error',
+                            "Erreur lors de la mise à jour des contacts",
+                            'error'
+                        );
+                        break;
+                    }
+                    
+                    // Relancer la synchronisation
+                    try {
+                        $this->synchronizer->sync_to_brevo();
+                        add_settings_error(
+                            'nelis_brevo_sync',
+                            'retry_success',
+                            "$updated contacts remis en file d'attente et synchronisation relancée",
+                            'success'
+                        );
+                    } catch (Exception $e) {
+                        $this->log("Erreur lors de la relance des contacts en échec: " . $e->getMessage());
+                        add_settings_error(
+                            'nelis_brevo_sync',
+                            'retry_error',
+                            "Erreur lors de la relance: " . $e->getMessage(),
+                            'error'
+                        );
+                    }
+                    break;
+                    
+                case 'truncate_table':
+                    global $wpdb;
+                    if (!$wpdb) {
+                        $this->log("Erreur: Objet wpdb non disponible");
+                        add_settings_error(
+                            'nelis_brevo_sync',
+                            'db_error',
+                            "Erreur: Base de données non disponible",
+                            'error'
+                        );
+                        break;
+                    }
+                    
+                    $table_name = $wpdb->prefix . 'nelis_brevo_sync';
+                    
+                    // Vider la table
+                    $result = $wpdb->query("TRUNCATE TABLE $table_name");
+                    
+                    if ($result === false) {
+                        $this->log("Erreur lors de la suppression des données de la table");
+                        add_settings_error(
+                            'nelis_brevo_sync',
+                            'truncate_error',
+                            "Erreur lors de la suppression des données",
+                            'error'
+                        );
+                    } else {
+                        // Réinitialiser la date de dernière synchronisation
+                        update_option('nelis_brevo_last_sync', 'Jamais');
+                        
+                        add_settings_error(
+                            'nelis_brevo_sync',
+                            'truncate_success',
+                            "Table de synchronisation vidée avec succès",
+                            'success'
+                        );
+                    }
+                    break;
+            }
+        }
+    }
+    
+    /**
+     * Gère les requêtes AJAX pour la synchronisation
+     */
+    public function ajax_sync() {
+        check_ajax_referer('nelis_brevo_sync');
+        
+        if (!current_user_can('manage_options')) {
+            wp_send_json_error('Accès refusé');
+        }
+        
+        // S'assurer que la table existe avant de synchroniser
+        $this->ensure_sync_table_exists();
+        
+        $type = isset($_POST['sync_type']) ? sanitize_text_field($_POST['sync_type']) : 'incremental';
+        
+        try {
+            if ($type === 'full') {
+                $result = $this->synchronizer->full_sync();
+                wp_send_json_success("Synchronisation complète: $result contacts traités");
+            } else {
+                $this->synchronizer->incremental_sync();
+                wp_send_json_success("Synchronisation incrémentielle terminée");
+            }
+        } catch (Exception $e) {
+            $this->log("Erreur de synchronisation: " . $e->getMessage());
+            wp_send_json_error($e->getMessage());
         }
     }
 }

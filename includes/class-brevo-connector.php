@@ -157,16 +157,31 @@ class BrevoConnector
 
     public function addContactToList(string $email, int $listId = null, array $attributes = []): bool
     {
-        $listId = $listId ?? $this->get_list_id();
-        $data = [
-            'email' => $email,
-            'attributes' => $attributes,
-            'listIds' => [$listId],
-            'updateEnabled' => true
-        ];
-
-        $this->request('POST', '/contacts', $data);
-        return true;
+        try {
+            $listId = $listId ?? $this->get_list_id();
+            
+            if (empty($listId)) {
+                error_log("Brevo: Aucune liste spécifiée pour l'ajout du contact $email");
+                return false;
+            }
+            
+            $data = [
+                'email' => $email,
+                'attributes' => $attributes,
+                'listIds' => [$listId],
+                'updateEnabled' => true
+            ];
+            
+            // Log des données envoyées à Brevo
+            error_log("Brevo: Envoi du contact $email avec attributs: " . json_encode($attributes));
+            
+            $result = $this->request('POST', '/contacts', $data);
+            error_log("Brevo: Contact $email ajouté avec succès");
+            return true;
+        } catch (Exception $e) {
+            error_log("Brevo: Erreur lors de l'ajout du contact $email: " . $e->getMessage());
+            return false;
+        }
     }
 
     public function removeContactFromList(string $email, int $listId = null): bool
@@ -186,6 +201,43 @@ class BrevoConnector
     public function getContact(string $email): array
     {
         return $this->request('GET', '/contacts/' . urlencode($email));
+    }
+    
+    /**
+     * Vérifie si un contact est présent dans une liste Brevo spécifique
+     * 
+     * @param string $email Email du contact à vérifier
+     * @param int|null $listId ID de la liste Brevo (facultatif, utilise la liste par défaut si non spécifié)
+     * @return bool True si le contact est présent dans la liste, false sinon
+     */
+    public function isContactInList(string $email, int $listId = null): bool
+    {
+        try {
+            $listId = $listId ?? $this->get_list_id();
+            
+            if (empty($listId)) {
+                error_log("Brevo: Aucune liste spécifiée pour vérifier le contact $email");
+                return false;
+            }
+            
+            // Récupérer les informations du contact
+            $contactInfo = $this->getContact($email);
+            
+            // Vérifier si le contact existe et s'il appartient à la liste spécifiée
+            if (isset($contactInfo['listIds']) && is_array($contactInfo['listIds'])) {
+                return in_array($listId, $contactInfo['listIds']);
+            }
+            
+            return false;
+        } catch (Exception $e) {
+            // Si une erreur 404 est renvoyée, cela signifie que le contact n'existe pas
+            if (strpos($e->getMessage(), '404') !== false) {
+                return false;
+            }
+            
+            error_log("Brevo: Erreur lors de la vérification du contact $email: " . $e->getMessage());
+            return false;
+        }
     }
 }
 

@@ -188,7 +188,6 @@ class Nelis_API_Client {
         $url .= '?date=' . urlencode( $date ) . '&with_custom_values=true';
 
         $response = wp_remote_get( $url, $args );
-var_dump($response);
         if ( is_wp_error( $response ) ) {
             return false;
         }
