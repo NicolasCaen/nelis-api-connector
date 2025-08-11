@@ -1022,4 +1022,203 @@ class ContactSynchronizer {
         
         return $stats;
     }
+    
+    /**
+     * Supprime de Brevo les contacts qui ne sont pas dans la base locale
+     * 
+     * @return array Statistiques de suppression
+     */
+    public function clean_brevo_contacts() {
+        global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return ['total_brevo' => 0, 'total_local' => 0, 'to_delete' => 0, 'deleted' => 0];
+        }
+        
+        $this->log("Début du nettoyage des contacts Brevo");
+        
+        // Vérifier que la table existe
+        if (!$this->table_exists()) {
+            $this->log("La table de synchronisation n'existe pas. Création...");
+            $this->create_sync_table();
+            return ['total_brevo' => 0, 'total_local' => 0, 'to_delete' => 0, 'deleted' => 0];
+        }
+        
+        // Récupérer tous les emails de la liste Brevo
+        $this->log("Récupération de tous les emails de Brevo");
+        $brevo_emails = $this->brevo_connector->getAllContactEmails();
+        $total_brevo = count($brevo_emails);
+        $this->log("$total_brevo emails trouvés dans Brevo");
+        
+        if (empty($brevo_emails)) {
+            $this->log("Aucun contact trouvé dans Brevo");
+            return ['total_brevo' => 0, 'total_local' => 0, 'to_delete' => 0, 'deleted' => 0];
+        }
+        
+        // Récupérer tous les emails de la base locale
+        $local_emails = [];
+        if ($wpdb) {
+            $results = $wpdb->get_results("SELECT email FROM $this->table_name");
+            foreach ($results as $result) {
+                $local_emails[] = strtolower($result->email); // Stocker en minuscules pour comparaison insensible à la casse
+            }
+        }
+        
+        $total_local = count($local_emails);
+        $this->log("$total_local emails trouvés dans la base locale");
+        
+        if (empty($local_emails)) {
+            $this->log("Aucun contact local trouvé");
+            return ['total_brevo' => $total_brevo, 'total_local' => 0, 'to_delete' => 0, 'deleted' => 0];
+        }
+        
+        // Identifier les contacts à supprimer (présents dans Brevo mais pas dans la base locale)
+        $emails_to_delete = [];
+        foreach ($brevo_emails as $email) {
+            if (!in_array($email, $local_emails)) {
+                $emails_to_delete[] = $email;
+            }
+        }
+        
+        $to_delete_count = count($emails_to_delete);
+        $this->log("$to_delete_count contacts à supprimer de Brevo");
+        
+        // Supprimer les contacts de Brevo
+        $deleted_count = 0;
+        foreach ($emails_to_delete as $email) {
+            try {
+                $listId = $this->brevo_connector->get_list_id();
+                if ($this->brevo_connector->removeContactFromList($email, $listId)) {
+                    $deleted_count++;
+                    $this->log("Contact supprimé de Brevo: $email");
+                } else {
+                    $this->log("Erreur lors de la suppression du contact de Brevo: $email");
+                }
+                
+                // Petit délai pour éviter de surcharger l'API Brevo
+                usleep(100000); // 0.1 seconde
+            } catch (Exception $e) {
+                $this->log("Exception lors de la suppression du contact $email: " . $e->getMessage());
+            }
+        }
+        
+        $stats = [
+            'total_brevo' => $total_brevo,
+            'total_local' => $total_local,
+            'to_delete' => $to_delete_count,
+            'deleted' => $deleted_count
+        ];
+        
+        $this->log("Nettoyage terminé: $deleted_count contacts supprimés de Brevo sur $to_delete_count à supprimer");
+        return $stats;
+    }
+    
+    /**
+     * Supprime les contacts locaux dont la date du champ personnalisé est plus vieille qu'un an
+     * 
+     * @return array Statistiques de suppression
+     */
+    public function clean_old_local_contacts() {
+        global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return ['total' => 0, 'to_delete' => 0, 'deleted' => 0];
+        }
+        
+        $this->log("Début du nettoyage des contacts locaux trop anciens");
+        
+        // Vérifier que la table existe
+        if (!$this->table_exists()) {
+            $this->log("La table de synchronisation n'existe pas. Création...");
+            $this->create_sync_table();
+            return ['total' => 0, 'to_delete' => 0, 'deleted' => 0];
+        }
+        
+        // Si aucun champ de filtre n'est configuré, on ne peut pas filtrer par date
+        if (empty($this->date_filter_field)) {
+            $this->log("Aucun champ de filtre de date configuré. Impossible de nettoyer les contacts anciens.");
+            return ['total' => 0, 'to_delete' => 0, 'deleted' => 0, 'error' => 'Aucun champ de filtre de date configuré'];
+        }
+        
+        // Récupérer tous les contacts de la base locale
+        $contacts = $wpdb->get_results("SELECT * FROM $this->table_name");
+        $total = count($contacts);
+        $this->log("$total contacts trouvés dans la base locale");
+        
+        if (empty($contacts)) {
+            $this->log("Aucun contact local à vérifier");
+            return ['total' => 0, 'to_delete' => 0, 'deleted' => 0];
+        }
+        
+        // Identifier les contacts à supprimer (dont la date est plus vieille qu'un an)
+        $contacts_to_delete = [];
+        $one_year_ago = new DateTime('-1 year');
+        $one_year_ago_str = $one_year_ago->format('Y-m-d');
+        
+        // Extraire l'ID du champ personnalisé utilisé pour le filtre de date
+        $field_id = str_replace('custom_', '', $this->date_filter_field);
+        
+        foreach ($contacts as $contact) {
+            // Vérifier si le champ de date existe pour ce contact
+            $date_column = 'custom_' . $field_id;
+            
+            if (property_exists($contact, $date_column) && !empty($contact->$date_column)) {
+                $date_value = $contact->$date_column;
+                
+                // Vérifier si c'est une date valide au format YYYY-MM-DD
+                if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_value)) {
+                    try {
+                        $date = new DateTime($date_value);
+                        
+                        // Si la date est plus ancienne qu'il y a un an, marquer pour suppression
+                        if ($date < $one_year_ago) {
+                            $contacts_to_delete[] = $contact;
+                        }
+                    } catch (Exception $e) {
+                        $this->log("Erreur lors de l'analyse de la date pour le contact {$contact->email}: " . $e->getMessage());
+                    }
+                } else {
+                    $this->log("Format de date invalide pour le contact {$contact->email}: $date_value");
+                }
+            } else {
+                // Si le contact n'a pas de date, on le considère comme à supprimer
+                $contacts_to_delete[] = $contact;
+            }
+        }
+        
+        $to_delete_count = count($contacts_to_delete);
+        $this->log("$to_delete_count contacts à supprimer de la base locale (plus vieux qu'un an)");
+        
+        // Supprimer les contacts de la base locale
+        $deleted_count = 0;
+        foreach ($contacts_to_delete as $contact) {
+            // Supprimer d'abord de Brevo si le contact y est présent
+            if ($contact->brevo_status === 'synced') {
+                try {
+                    $listId = $this->brevo_connector->get_list_id();
+                    $this->brevo_connector->removeContactFromList($contact->email, $listId);
+                    $this->log("Contact supprimé de Brevo avant suppression locale: {$contact->email}");
+                } catch (Exception $e) {
+                    $this->log("Erreur lors de la suppression du contact de Brevo: {$contact->email} - " . $e->getMessage());
+                }
+            }
+            
+            // Supprimer de la base locale
+            if ($wpdb->delete($this->table_name, ['id' => $contact->id])) {
+                $deleted_count++;
+                $this->log("Contact supprimé de la base locale: {$contact->email}");
+            } else {
+                $this->log("Erreur lors de la suppression du contact de la base locale: {$contact->email}");
+            }
+        }
+        
+        $stats = [
+            'total' => $total,
+            'to_delete' => $to_delete_count,
+            'deleted' => $deleted_count
+        ];
+        
+        $this->log("Nettoyage terminé: $deleted_count contacts supprimés de la base locale sur $to_delete_count identifiés comme trop anciens");
+        return $stats;
+    }
 }
