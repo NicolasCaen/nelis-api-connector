@@ -239,6 +239,41 @@ class BrevoConnector
             return false;
         }
     }
+    
+    /**
+     * Récupère tous les emails de la liste Brevo
+     * 
+     * @param int|null $listId ID de la liste Brevo (facultatif, utilise la liste par défaut si non spécifié)
+     * @return array Tableau des emails présents dans la liste Brevo
+     */
+    public function getAllContactEmails(int $listId = null): array
+    {
+        $listId = $listId ?? $this->get_list_id();
+        $emails = [];
+        $offset = 0;
+        $limit = 50; // Récupérer par lots de 50 contacts (limite acceptée par l'API Brevo)
+        $total = 0;
+        
+        do {
+            $response = $this->getContactsFromList($listId, $limit, $offset);
+            
+            if (!isset($response['contacts']) || !is_array($response['contacts'])) {
+                break;
+            }
+            
+            foreach ($response['contacts'] as $contact) {
+                if (isset($contact['email'])) {
+                    $emails[] = strtolower($contact['email']); // Stocker en minuscules pour comparaison insensible à la casse
+                }
+            }
+            
+            $total = $response['count'] ?? 0;
+            $offset += $limit;
+            
+        } while (count($emails) < $total && isset($response['contacts']) && count($response['contacts']) > 0);
+        
+        return $emails;
+    }
 }
 
 /* ---------- Initialisation ---------- */

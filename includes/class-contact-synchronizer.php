@@ -638,6 +638,140 @@ class ContactSynchronizer {
     }
     
     /**
+     * Synchronise tous les contacts en attente vers Brevo sans limite
+     * 
+     * @return int Nombre de contacts synchronisés
+     */
+    public function sync_all_to_brevo() {
+        global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return 0;
+        }
+        
+        $this->log("Début synchronisation complète vers Brevo (tous les contacts en attente)");
+        
+        // Vérifier que la table existe
+        if (!$this->table_exists()) {
+            $this->log("La table de synchronisation n'existe pas. Création...");
+            $this->create_sync_table();
+        }
+        
+        // Récupérer tous les contacts en attente de synchronisation sans limite
+        $contacts_to_sync = $wpdb->get_results(
+            "SELECT * FROM $this->table_name WHERE brevo_status = 'pending'"
+        );
+        
+        if (empty($contacts_to_sync)) {
+            $this->log("Aucun contact à synchroniser avec Brevo");
+            return 0;
+        }
+        
+        $total_contacts = count($contacts_to_sync);
+        $this->log("Synchronisation de tous les contacts en attente: $total_contacts contacts à traiter");
+        $synced_count = 0;
+        
+        foreach ($contacts_to_sync as $contact) {
+            try {
+                // Attributs de base
+                $attributes = [
+                    'FIRSTNAME' => $contact->firstname ?: '',
+                    'LASTNAME' => $contact->lastname ?: '',
+                    'NELIS_ID' => $contact->nelis_id
+                ];
+                
+                // Ajouter les dates si elles existent
+                if (!empty($contact->date_creation)) {
+                    $attributes['DATE_CREATION'] = $contact->date_creation;
+                }
+                
+                if (!empty($contact->date_update)) {
+                    $attributes['DATE_UPDATE'] = $contact->date_update;
+                }
+                
+                // Récupérer tous les champs personnalisés
+                $columns = $wpdb->get_results("SHOW COLUMNS FROM $this->table_name LIKE 'custom_%'");
+                if (!empty($columns)) {
+                    foreach ($columns as $column) {
+                        $field_name = $column->Field;
+                        if (property_exists($contact, $field_name) && !empty($contact->$field_name)) {
+                            // Convertir le nom de colonne custom_XX en CUSTOM_XX pour Brevo
+                            $brevo_field_name = strtoupper($field_name);
+                            $attributes[$brevo_field_name] = $contact->$field_name;
+                        }
+                    }
+                }
+                
+                $this->log("Envoi à Brevo pour {$contact->email} avec attributs: " . json_encode($attributes));
+                
+                $success = $this->brevo_connector->addContactToList(
+                    $contact->email, 
+                    null, 
+                    $attributes
+                );
+                
+                if ($success) {
+                    // Vérifier que le contact est bien présent dans la liste Brevo
+                    $is_in_list = $this->brevo_connector->isContactInList($contact->email);
+                    
+                    if ($is_in_list) {
+                        $wpdb->update(
+                            $this->table_name,
+                            [
+                                'brevo_status' => 'synced',
+                                'last_sync' => current_time('mysql'),
+                                'error_message' => null
+                            ],
+                            ['id' => $contact->id]
+                        );
+                        $synced_count++;
+                        $this->log("Contact synchronisé et vérifié dans la liste Brevo: {$contact->email} ($synced_count/$total_contacts)");
+                    } else {
+                        // Le contact a été ajouté mais n'est pas trouvé dans la liste
+                        $wpdb->update(
+                            $this->table_name,
+                            [
+                                'brevo_status' => 'error',
+                                'error_message' => 'Contact ajouté mais non trouvé dans la liste Brevo'
+                            ],
+                            ['id' => $contact->id]
+                        );
+                        $this->log("Contact {$contact->email} ajouté mais non trouvé dans la liste Brevo");
+                    }
+                } else {
+                    // Mettre à jour le statut en erreur
+                    $wpdb->update(
+                        $this->table_name,
+                        [
+                            'brevo_status' => 'error',
+                            'error_message' => 'Erreur lors de la synchronisation avec Brevo'
+                        ],
+                        ['id' => $contact->id]
+                    );
+                    $this->log("Erreur lors de la synchronisation du contact {$contact->email} avec Brevo");
+                }
+            } catch (Exception $e) {
+                // Mettre à jour le statut en erreur avec le message d'erreur
+                $wpdb->update(
+                    $this->table_name,
+                    [
+                        'brevo_status' => 'error',
+                        'error_message' => $e->getMessage()
+                    ],
+                    ['id' => $contact->id]
+                );
+                $this->log("Exception lors de la synchronisation du contact {$contact->email}: " . $e->getMessage());
+            }
+            
+            // Petit délai pour éviter de surcharger l'API Brevo
+            usleep(100000); // 0.1 seconde
+        }
+        
+        $this->log("Synchronisation complète terminée: $synced_count contacts synchronisés sur $total_contacts");
+        return $synced_count;
+    }
+    
+    /**
      * Générer un hash pour détecter les changements
      */
     private function generate_contact_hash($contact) {
@@ -779,6 +913,7 @@ class ContactSynchronizer {
     
     /**
      * Vérifie le statut des contacts dans Brevo et met à jour leur statut local
+     * en comparant les emails présents dans Brevo avec ceux de la base locale
      * 
      * @return array Statistiques de vérification
      */
@@ -786,123 +921,105 @@ class ContactSynchronizer {
         global $wpdb;
         if (!$wpdb) {
             $this->log("Erreur: Objet wpdb non disponible");
-            return ['verified' => 0, 'errors' => 0, 'fixed' => 0];
+            return ['verified' => 0, 'errors' => 0, 'fixed' => 0, 'not_in_brevo' => 0, 'in_brevo' => 0];
         }
         
-        $this->log("Début vérification des statuts Brevo");
+        $this->log("Début vérification des statuts Brevo avec la nouvelle méthode");
         
         // Vérifier que la table existe
         if (!$this->table_exists()) {
             $this->log("La table de synchronisation n'existe pas. Création...");
             $this->create_sync_table();
-            return ['verified' => 0, 'errors' => 0, 'fixed' => 0];
+            return ['verified' => 0, 'errors' => 0, 'fixed' => 0, 'not_in_brevo' => 0, 'in_brevo' => 0];
         }
         
-        // Récupérer tous les contacts marqués comme synchronisés
+        // Récupérer tous les emails de la liste Brevo
+        $this->log("Récupération de tous les emails de Brevo");
+        $brevo_emails = $this->brevo_connector->getAllContactEmails();
+        $this->log(count($brevo_emails) . " emails trouvés dans Brevo");
+        
+        if (empty($brevo_emails)) {
+            $this->log("Aucun contact trouvé dans Brevo");
+            return ['verified' => 0, 'errors' => 0, 'fixed' => 0, 'not_in_brevo' => 0, 'in_brevo' => 0];
+        }
+        
+        // Récupérer tous les contacts de la base locale
         $contacts = [];
         if ($wpdb) {
             $contacts = $wpdb->get_results(
-                "SELECT * FROM $this->table_name WHERE brevo_status = 'synced' LIMIT 100"
+                "SELECT * FROM $this->table_name"
             );
         }
         
         if (empty($contacts)) {
-            $this->log("Aucun contact synchronisé à vérifier");
-            return ['verified' => 0, 'errors' => 0, 'fixed' => 0];
+            $this->log("Aucun contact local à vérifier");
+            return ['verified' => 0, 'errors' => 0, 'fixed' => 0, 'not_in_brevo' => 0, 'in_brevo' => 0];
         }
         
-        $this->log("Vérification de " . count($contacts) . " contacts dans Brevo");
+        $this->log("Vérification de " . count($contacts) . " contacts locaux");
         
         $stats = [
-            'verified' => 0,
-            'errors' => 0,
-            'fixed' => 0
+            'verified' => 0,   // Contacts déjà correctement marqués comme synchronisés
+            'errors' => 0,    // Contacts marqués comme synchronisés mais absents de Brevo
+            'fixed' => 0,      // Contacts dont le statut a été corrigé
+            'not_in_brevo' => 0, // Contacts locaux absents de Brevo
+            'in_brevo' => 0   // Contacts locaux présents dans Brevo
         ];
         
+        // Convertir le tableau d'emails Brevo en un tableau associatif pour une recherche plus rapide
+        $brevo_emails_map = array_flip($brevo_emails);
+        
         foreach ($contacts as $contact) {
-            // Vérifier si le contact est bien dans la liste Brevo
-            $is_in_list = $this->brevo_connector->isContactInList($contact->email);
+            $email_lower = strtolower($contact->email); // Comparaison insensible à la casse
+            $is_in_brevo = isset($brevo_emails_map[$email_lower]);
             
-            if ($is_in_list) {
-                // Contact correctement synchronisé
-                $stats['verified']++;
-            } else {
-                // Contact marqué comme synchronisé mais non trouvé dans Brevo
-                $stats['errors']++;
+            if ($is_in_brevo) {
+                $stats['in_brevo']++;
                 
-                // Essayer de le resynchroniser
-                $attributes = [
-                    'FIRSTNAME' => $contact->firstname ?: '',
-                    'LASTNAME' => $contact->lastname ?: '',
-                    'NELIS_ID' => $contact->nelis_id
-                ];
-                
-                // Ajouter les dates si elles existent
-                if (!empty($contact->date_creation)) {
-                    $attributes['DATE_CREATION'] = $contact->date_creation;
-                }
-                
-                if (!empty($contact->date_update)) {
-                    $attributes['DATE_UPDATE'] = $contact->date_update;
-                }
-                
-                // Ajouter les champs personnalisés
-                $columns = [];
-                if ($wpdb) {
-                    $columns = $wpdb->get_results("SHOW COLUMNS FROM $this->table_name LIKE 'custom_%'");
-                }
-                if (!empty($columns)) {
-                    foreach ($columns as $column) {
-                        $field_name = $column->Field;
-                        if (property_exists($contact, $field_name) && !empty($contact->$field_name)) {
-                            $brevo_field_name = strtoupper($field_name);
-                            $attributes[$brevo_field_name] = $contact->$field_name;
-                        }
-                    }
-                }
-                
-                $success = $this->brevo_connector->addContactToList(
-                    $contact->email, 
-                    null, 
-                    $attributes
-                );
-                
-                if ($success && $this->brevo_connector->isContactInList($contact->email)) {
-                    // Contact resynchronisé avec succès
-                    if ($wpdb) {
-                        $wpdb->update(
-                            $this->table_name,
-                            [
-                                'brevo_status' => 'synced',
-                                'last_sync' => current_time('mysql'),
-                                'error_message' => null
-                            ],
-                            ['id' => $contact->id]
-                        );
-                    }
-                    $stats['fixed']++;
-                    $this->log("Contact resynchronisé: {$contact->email}");
+                // Le contact est dans Brevo, vérifier si son statut local est correct
+                if ($contact->brevo_status === 'synced') {
+                    // Statut correct
+                    $stats['verified']++;
                 } else {
-                    // Échec de resynchronisation
-                    if ($wpdb) {
-                        $wpdb->update(
-                            $this->table_name,
-                            [
-                                'brevo_status' => 'error',
-                                'error_message' => 'Contact non trouvé dans Brevo après resynchronisation'
-                            ],
-                            ['id' => $contact->id]
-                        );
+                    // Statut incorrect, mettre à jour
+                    if ($wpdb->update(
+                        $this->table_name,
+                        [
+                            'brevo_status' => 'synced',
+                            'last_sync' => current_time('mysql'),
+                            'error_message' => null
+                        ],
+                        ['id' => $contact->id]
+                    )) {
+                        $stats['fixed']++;
+                        $this->log("Statut corrigé pour {$contact->email}: maintenant marqué comme synchronisé");
                     }
-                    $this->log("Échec de resynchronisation pour {$contact->email}");
                 }
+            } else {
+                $stats['not_in_brevo']++;
+                
+                // Le contact n'est pas dans Brevo, vérifier si son statut local est correct
+                if ($contact->brevo_status === 'synced') {
+                    // Statut incorrect, mettre à jour
+                    if ($wpdb->update(
+                        $this->table_name,
+                        [
+                            'brevo_status' => 'pending',
+                            'error_message' => 'Contact marqué comme synchronisé mais absent de Brevo'
+                        ],
+                        ['id' => $contact->id]
+                    )) {
+                        $stats['errors']++;
+                        $this->log("Statut corrigé pour {$contact->email}: marqué comme en attente car absent de Brevo");
+                    }
+                }
+                // Si le contact est déjà marqué comme 'pending' ou 'error', on ne fait rien
             }
-            
-            // Petit délai pour éviter de surcharger l'API Brevo
-            usleep(100000); // 0.1 seconde
         }
         
-        $this->log("Vérification terminée: {$stats['verified']} contacts vérifiés, {$stats['errors']} erreurs, {$stats['fixed']} corrigés");
+        $this->log("Vérification terminée: {$stats['verified']} contacts déjà corrects, {$stats['fixed']} statuts corrigés, {$stats['errors']} erreurs détectées");
+        $this->log("{$stats['in_brevo']} contacts locaux présents dans Brevo, {$stats['not_in_brevo']} contacts locaux absents de Brevo");
+        
         return $stats;
     }
 }

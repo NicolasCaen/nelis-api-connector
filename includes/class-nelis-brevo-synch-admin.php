@@ -336,6 +336,16 @@ class NelisBrevoSyncAdmin {
                             Synchronisation complète
                         </button>
                     </p>
+                    <p>
+                        <button class="button button-primary sync-button" data-sync-type="sync_all" data-original-text="Tout synchroniser vers Brevo">
+                            Tout synchroniser vers Brevo
+                        </button>
+                    </p>
+                    <p>
+                        <button class="button button-secondary sync-button" data-sync-type="verify" data-original-text="Vérifier la synchronisation avec Brevo">
+                            Vérifier la synchronisation avec Brevo
+                        </button>
+                    </p>
                     <?php if (($stats['error'] ?? 0) > 0): ?>
                     <p>
                         <button id="retry-failed-button" class="button">Relancer les échecs</button>
@@ -747,6 +757,16 @@ class NelisBrevoSyncAdmin {
             if ($type === 'full') {
                 $result = $this->synchronizer->full_sync();
                 wp_send_json_success("Synchronisation complète: $result contacts traités");
+            } elseif ($type === 'sync_all') {
+                // Nouvelle option pour synchroniser tous les contacts en attente
+                $result = $this->synchronizer->sync_all_to_brevo();
+                wp_send_json_success("Synchronisation complète vers Brevo: $result contacts synchronisés");
+            } elseif ($type === 'verify') {
+                // Vérifier la synchronisation avec Brevo
+                $stats = $this->synchronizer->verify_brevo_status();
+                $message = "Vérification terminée: {$stats['in_brevo']} contacts présents dans Brevo, {$stats['not_in_brevo']} contacts absents de Brevo. ";
+                $message .= "{$stats['verified']} contacts déjà corrects, {$stats['fixed']} statuts corrigés, {$stats['errors']} erreurs détectées.";
+                wp_send_json_success($message);
             } else {
                 $this->synchronizer->incremental_sync();
                 wp_send_json_success("Synchronisation incrémentielle terminée");
