@@ -7,6 +7,7 @@ class NelisBrevoSyncAdmin {
     
     private $synchronizer;
     private $hidden_fields = [];
+    private $date_filter_field = '';
     
     public function __construct() {
         $this->synchronizer = new ContactSynchronizer();
@@ -16,6 +17,9 @@ class NelisBrevoSyncAdmin {
         
         // Charger les champs cachés
         $this->hidden_fields = get_option('nelis_brevo_hidden_fields', []);
+        
+        // Charger le champ de filtre par date
+        $this->date_filter_field = get_option('nelis_brevo_date_filter_field', 'custom_80');
         
         add_action('admin_menu', [$this, 'add_admin_menu']);
         add_action('admin_init', [$this, 'handle_actions']);
@@ -43,7 +47,6 @@ class NelisBrevoSyncAdmin {
         ?>
         <script type="text/javascript">
         document.addEventListener('DOMContentLoaded', function() {
-            // Debug - Vérifier si les boutons existent
             const syncButtons = document.querySelectorAll('.sync-button');
             console.log('Boutons de synchronisation trouvés:', syncButtons.length);
             
@@ -295,6 +298,15 @@ class NelisBrevoSyncAdmin {
             add_settings_error('nelis_brevo_sync', 'fields_updated', 'Configuration des champs mise à jour', 'success');
         }
         
+        // Traitement du formulaire de configuration du champ de filtre par date
+        if (isset($_POST['action']) && $_POST['action'] === 'update_date_filter') {
+            check_admin_referer('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce');
+            $date_filter_field = isset($_POST['date_filter_field']) ? sanitize_text_field($_POST['date_filter_field']) : 'custom_80';
+            update_option('nelis_brevo_date_filter_field', $date_filter_field);
+            $this->date_filter_field = $date_filter_field;
+            add_settings_error('nelis_brevo_sync', 'date_filter_updated', 'Configuration du filtre par date mise à jour', 'success');
+        }
+        
         ?>
         <div class="wrap">
             <h1>Synchronisation Nelis → Brevo</h1>
@@ -357,6 +369,26 @@ class NelisBrevoSyncAdmin {
                                     <?php echo esc_html($field_name); ?>
                                 </label>
                             <?php endforeach; ?>
+                            <p><input type="submit" class="button" value="Enregistrer la configuration"></p>
+                        </form>
+                    </div>
+                    
+                    <!-- Configuration du filtre par date -->
+                    <div style="margin-top: 20px;">
+                        <h4>Filtre par date</h4>
+                        <form method="post" action="">
+                            <?php wp_nonce_field('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce'); ?>
+                            <input type="hidden" name="action" value="update_date_filter">
+                            <p>Sélectionnez le champ date pour filtrer les contacts (format YYYY-MM-DD):</p>
+                            <select name="date_filter_field">
+                                <?php foreach ($custom_fields as $field): ?>
+                                    <?php $field_name = str_replace('custom_', '', $field); ?>
+                                    <option value="<?php echo esc_attr($field); ?>" <?php selected($field, $this->date_filter_field); ?>>
+                                        <?php echo esc_html($field_name); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description">Les contacts seront synchronisés uniquement si ce champ contient une date valide au format YYYY-MM-DD et que cette date est inférieure à un an par rapport à aujourd'hui.</p>
                             <p><input type="submit" class="button" value="Enregistrer la configuration"></p>
                         </form>
                     </div>

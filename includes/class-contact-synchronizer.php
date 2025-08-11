@@ -6,46 +6,55 @@ class ContactSynchronizer {
     private $nelis_client;
     private $brevo_connector;
     private $table_name;
+    private $date_filter_field;
     
     public function __construct() {
         global $wpdb;
-        $this->table_name = $wpdb->prefix . 'nelis_brevo_sync';
+        if ($wpdb) {
+            $this->table_name = $wpdb->prefix . 'nelis_brevo_sync';
+        } else {
+            $this->log("Erreur: Objet wpdb non disponible dans le constructeur");
+            $this->table_name = 'wp_nelis_brevo_sync'; // Valeur par défaut au cas où
+        }
+        
         $this->nelis_client = new Nelis_API_Client();
         $this->brevo_connector = new BrevoConnector();
+        
+        // Charger le champ de filtre par date
+        $this->date_filter_field = get_option('nelis_brevo_date_filter_field', 'custom_80');
+
     }
     
     /**
      * Créer la table de synchronisation
      */
-    /**
-     * Créer la table de synchronisation
-     */
     public function create_sync_table() {
         global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return false;
+        }
         
         $charset_collate = $wpdb->get_charset_collate();
         
-        $sql = "CREATE TABLE $this->table_name (
-            id int(11) NOT NULL AUTO_INCREMENT,
-            nelis_id int(11),
+        $sql = "CREATE TABLE IF NOT EXISTS $this->table_name (
+            id bigint(20) NOT NULL AUTO_INCREMENT,
+            nelis_id bigint(20) NOT NULL,
             email varchar(255) NOT NULL,
             firstname varchar(255),
             lastname varchar(255),
-            date_creation datetime,
-            date_update datetime,
-            nelis_hash varchar(32),
-            brevo_status varchar(20) DEFAULT 'pending',
-            error_message text,
-            last_sync datetime,
+            brevo_status varchar(50) DEFAULT 'pending',
+            brevo_response text,
+            last_sync datetime DEFAULT NULL,
             PRIMARY KEY (id),
-            UNIQUE KEY email (email),
-            KEY brevo_status (brevo_status)
+            UNIQUE KEY nelis_id (nelis_id)
         ) $charset_collate;";
         
         require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
         dbDelta($sql);
         
-        $this->log("Table de synchronisation créée ou mise à jour");
+        return true;
+        
     }
     
     /**
@@ -55,60 +64,36 @@ class ContactSynchronizer {
      */
     public function table_exists() {
         global $wpdb;
-        
-        $result = $wpdb->query("SHOW TABLES LIKE '$this->table_name'");
-        return $result > 0;
-    }
-    
-    /**
-     * Synchronisation complète (première fois)
-     */
-    /**
-     * Vérifie si les colonnes date_creation et date_update existent et les ajoute si nécessaire
-     */
-    private function check_date_columns() {
-        global $wpdb;
-        
-        $this->log("Vérification des colonnes de dates");
-        
-        // Vérifier si la colonne date_creation existe
-        $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $this->table_name LIKE 'date_creation'");
-        if (empty($column_exists)) {
-            $this->log("Ajout de la colonne date_creation");
-            $wpdb->query("ALTER TABLE $this->table_name ADD COLUMN date_creation datetime");
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return false;
         }
         
-        // Vérifier si la colonne date_update existe
-        $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $this->table_name LIKE 'date_update'");
-        if (empty($column_exists)) {
-            $this->log("Ajout de la colonne date_update");
-            $wpdb->query("ALTER TABLE $this->table_name ADD COLUMN date_update datetime");
-        }
-    }
-    
-    /**
-     * Vide la table de synchronisation
-     */
-    private function truncate_sync_table() {
-        global $wpdb;
-        
-        $this->log("Vidage de la table de synchronisation");
-        $wpdb->query("TRUNCATE TABLE $this->table_name");
+        return $wpdb->get_var("SHOW TABLES LIKE '$this->table_name'") === $this->table_name;
     }
     
     /**
      * Synchronisation complète (première fois)
      */
     public function full_sync() {
+        global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return 0;
+        }
+        
         $this->log("Début synchronisation complète");
         
-        // Créer la table si elle n'existe pas
-        $this->create_sync_table();
+        // Créer un répertoire temporaire pour les fichiers JSON
+        $temp_dir = plugin_dir_path(dirname(__FILE__)) . 'temp';
+        if (!file_exists($temp_dir)) {
+            mkdir($temp_dir, 0755, true);
+        }
         
-        // Vérifier si les colonnes date_creation et date_update existent
+        // Vérifier et ajouter les colonnes de dates si nécessaires
         $this->check_date_columns();
         
-        // Vider la table avant synchronisation complète
+        // Vider la table de synchronisation
         $this->truncate_sync_table();
         
         $batch_size = 100;
@@ -144,9 +129,15 @@ class ContactSynchronizer {
             
             if ($count > 0) {
                 foreach ($contacts as $contact) {
-                    $result = $this->process_nelis_contact($contact);
-                    if ($result) {
-                        $total_contacts++;
+                    if ($this->should_sync_contact($contact)) {
+                        $result = $this->process_nelis_contact($contact);
+                        if ($result) {
+                            $total_contacts++;
+                        }
+                    } else {
+                        // Log si le contact n'est pas traité (probablement à cause du filtre de date)
+                        $email = $contact['email'] ?? 'inconnu';
+                        $this->log("Contact $email non traité (filtre de date)");
                     }
                 }
                 $this->log("Total contacts traités jusqu'à présent: $total_contacts");
@@ -168,42 +159,47 @@ class ContactSynchronizer {
     }
     
     /**
-     * Synchronisation incrémentielle
+     * Vérifie si les colonnes date_creation et date_update existent et les ajoute si nécessaire
      */
-    public function incremental_sync() {
-        $this->log("Début synchronisation incrémentielle");
-        
-        $last_sync = get_option('nelis_brevo_last_sync', date('Y-m-d', strtotime('-1 day')));
-        
-        $total_processed = 0;
-        
-        // Contacts créés
-        $created_contacts = $this->nelis_client->get_contacts_created_since($last_sync);
-        if ($created_contacts && is_array($created_contacts)) {
-            foreach ($created_contacts as $contact) {
-                if ($this->process_nelis_contact($contact)) {
-                    $total_processed++;
-                }
-            }
+    private function check_date_columns() {
+        global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return false;
         }
         
-        // Contacts modifiés
-        $updated_contacts = $this->nelis_client->get_contacts_updated_since($last_sync);
-        if ($updated_contacts && is_array($updated_contacts)) {
-            foreach ($updated_contacts as $contact) {
-                if ($this->process_nelis_contact($contact, true)) {
-                    $total_processed++;
-                }
-            }
+        $this->log("Vérification des colonnes de dates");
+        
+        // Vérifier si la colonne date_creation existe
+        $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $this->table_name LIKE 'date_creation'");
+        if (empty($column_exists)) {
+            $wpdb->query("ALTER TABLE $this->table_name ADD COLUMN date_creation datetime AFTER lastname");
+            $this->log("Colonne date_creation ajoutée");
         }
         
-        // Synchroniser vers Brevo
-        $synced = $this->sync_to_brevo();
+        // Vérifier si la colonne date_update existe
+        $column_exists = $wpdb->get_results("SHOW COLUMNS FROM $this->table_name LIKE 'date_update'");
+        if (empty($column_exists)) {
+            $wpdb->query("ALTER TABLE $this->table_name ADD COLUMN date_update datetime AFTER date_creation");
+            $this->log("Colonne date_update ajoutée");
+        }
         
-        // Mettre à jour la date de dernière sync
-        update_option('nelis_brevo_last_sync', current_time('mysql'));
+        return true;
+    }
+    
+    /**
+     * Vide la table de synchronisation
+     */
+    private function truncate_sync_table() {
+        global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return false;
+        }
         
-        $this->log("Synchronisation incrémentielle terminée: $total_processed contacts traités, $synced synchronisés vers Brevo");
+        $wpdb->query("TRUNCATE TABLE $this->table_name");
+        $this->log("Table de synchronisation vidée");
+        return true;
     }
     
     /**
@@ -266,13 +262,15 @@ class ContactSynchronizer {
     }
     
     /**
-     * Traiter un contact Nelis
-     */
-    /**
      * Vérifie si une colonne existe dans la table
      */
     private function column_exists($column_name) {
         global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return false;
+        }
+        
         $check_column = $wpdb->get_results($wpdb->prepare(
             "SELECT * FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_SCHEMA = %s AND TABLE_NAME = %s AND COLUMN_NAME = %s",
             DB_NAME,
@@ -285,18 +283,85 @@ class ContactSynchronizer {
     /**
      * Ajoute une colonne à la table si elle n'existe pas
      */
-    private function add_column_if_not_exists($column_name, $column_definition) {
-        global $wpdb;
+    private function add_column_if_not_exists($column_name, $definition, $after = '') {
         if (!$this->column_exists($column_name)) {
-            $wpdb->query("ALTER TABLE $this->table_name ADD COLUMN $column_name $column_definition");
-            $this->log("Colonne $column_name ajoutée à la table $this->table_name");
+            global $wpdb;
+            if (!$wpdb) {
+                $this->log("Erreur: Objet wpdb non disponible");
+                return false;
+            }
+            
+            $after_clause = $after ? "AFTER $after" : '';
+            $wpdb->query("ALTER TABLE $this->table_name ADD COLUMN $column_name $definition $after_clause");
+            $this->log("Colonne $column_name ajoutée");
             return true;
         }
         return false;
     }
     
-    private function process_nelis_contact($contact, $is_update = false) {
+    /**
+     * Vérifie si un contact doit être synchronisé en fonction de la date
+     * 
+     * @param array $contact Le contact Nelis à vérifier
+     * @return bool True si le contact doit être synchronisé, false sinon
+     */
+    private function should_sync_contact($contact) {
+        // Si aucun champ de filtre n'est configuré, synchroniser tous les contacts
+        if (empty($this->date_filter_field)) {
+            return true;
+        }
+        
+        // Récupérer la valeur du champ date
+        $custom_fields = $contact['customfieldsvalues'] ?? [];
+  
+        $date_value = null;
+        
+        // Chercher le champ personnalisé correspondant au filtre
+        $field_id = str_replace('custom_', '', $this->date_filter_field);
+
+        // Vérifie si le champ existe et n'est pas vide
+        if (empty($custom_fields[$field_id])) {
+            error_log("custom_fields pas exist : " . $field_id);
+            return false;
+        }
+
+        $date_value = $custom_fields[$field_id];
+        error_log("date récupérée : " . $date_value);
+
+
+        // Si le champ date est vide, ne pas synchroniser
+        if (empty($date_value)) {
+            return false;
+        }
+        
+        // Vérifier si c'est une date valide au format YYYY-MM-DD
+        if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $date_value)) {
+            return false;
+        }
+        
+        // Vérifier si la date est inférieure à un an par rapport à aujourd'hui
+        try {
+            $date = new DateTime($date_value);
+            $now = new DateTime();
+            $one_year_ago = new DateTime('-1 year');
+            
+            // La date doit être plus récente qu'il y a un an
+            return $date > $one_year_ago && $date <= $now;
+        } catch (Exception $e) {
+            // En cas d'erreur de date, ne pas synchroniser
+            return false;
+        }
+    }
+    
+    /**
+     * Traite un contact Nelis et l'insère/met à jour dans la table de synchronisation
+     */
+    public function process_nelis_contact($contact, $is_update = false) {
         global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return false;
+        }
         
         if (!isset($contact['id']) || !isset($contact['email']) || empty($contact['email'])) {
             $this->log("Contact ignoré - ID ou email manquant: " . json_encode($contact));
@@ -306,8 +371,8 @@ class ContactSynchronizer {
         $data_hash = $this->generate_contact_hash($contact);
         
         // S'assurer que les colonnes date_creation et date_update existent
-        $this->add_column_if_not_exists('date_creation', 'DATETIME');
-        $this->add_column_if_not_exists('date_update', 'DATETIME');
+        $this->add_column_if_not_exists('date_creation', 'DATETIME', 'lastname');
+        $this->add_column_if_not_exists('date_update', 'DATETIME', 'date_creation');
         
         $contact_data = [
             'nelis_id' => $contact['id'],
@@ -385,8 +450,52 @@ class ContactSynchronizer {
     }
     
     /**
-     * Synchroniser vers Brevo
+     * Synchronisation incrémentielle
      */
+    public function incremental_sync() {
+        global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return;
+        }
+        
+        $this->log("Début synchronisation incrémentielle");
+        
+        $last_sync = get_option('nelis_brevo_last_sync', date('Y-m-d', strtotime('-1 day')));
+        
+        $total_processed = 0;
+        
+        // Contacts créés
+        $created_contacts = $this->nelis_client->get_contacts_created_since($last_sync);
+        if ($created_contacts && is_array($created_contacts)) {
+            foreach ($created_contacts as $contact) {
+                if ($this->should_sync_contact($contact) && $this->process_nelis_contact($contact)) {
+                    $total_processed++;
+                }
+            }
+        }
+        
+        // Contacts modifiés
+        $updated_contacts = $this->nelis_client->get_contacts_updated_since($last_sync);
+        if ($updated_contacts && is_array($updated_contacts)) {
+            foreach ($updated_contacts as $contact) {
+                if ($this->should_sync_contact($contact) && $this->process_nelis_contact($contact, true)) {
+                    $total_processed++;
+                }
+            }
+        }
+        
+        // Synchroniser vers Brevo
+        $synced = $this->sync_to_brevo();
+        
+        // Mettre à jour la date de dernière sync
+        update_option('nelis_brevo_last_sync', current_time('mysql'));
+        
+        $this->log("Synchronisation incrémentielle terminée: $total_processed contacts traités, $synced synchronisés vers Brevo");
+        
+        return $total_processed;
+    }
+    
     /**
      * Synchronise les contacts en attente vers Brevo
      * 
@@ -394,6 +503,12 @@ class ContactSynchronizer {
      */
     public function sync_to_brevo() {
         global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return 0;
+        }
+        
+        $this->log("Début synchronisation vers Brevo");
         
         // Vérifier que la table existe
         if (!$this->table_exists()) {
@@ -546,9 +661,13 @@ class ContactSynchronizer {
     
     /**
      * Logger les messages
+     * 
+     * @param string $message Le message à logger
+     * @return void
      */
     private function log($message) {
-        if (defined('WP_DEBUG') && WP_DEBUG && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG) {
+        // Vérifier que les constantes de debug sont définies et activées
+        if (defined('WP_DEBUG') && WP_DEBUG === true && defined('WP_DEBUG_LOG') && WP_DEBUG_LOG === true) {
             error_log("[Nelis-Brevo Sync] " . $message);
         }
     }
@@ -558,6 +677,10 @@ class ContactSynchronizer {
      */
     public function get_sync_stats() {
         global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return;
+        }
         
         return [
             'total' => (int) $wpdb->get_var("SELECT COUNT(*) FROM $this->table_name"),
@@ -572,20 +695,28 @@ class ContactSynchronizer {
      */
     public function retry_failed_contacts() {
         global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return;
+        }
         
         $updated = $wpdb->update(
             $this->table_name,
-            [
-                'brevo_status' => 'pending',
-                'error_message' => null
-            ],
+            ['brevo_status' => 'pending'],
             ['brevo_status' => 'error']
         );
         
+        if ($updated === false) {
+            $this->log("Erreur lors de la mise à jour des contacts en erreur");
+            return false;
+        }
+        
         $this->log("$updated contacts remis en file d'attente");
         
-        // Relancer la synchronisation
-        return $this->sync_to_brevo();
+        // Synchroniser vers Brevo
+        $result = $this->sync_to_brevo();
+        
+        return $updated;
     }
     
     /**
@@ -593,6 +724,10 @@ class ContactSynchronizer {
      */
     public function cleanup_old_contacts($days = 30) {
         global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return;
+        }
         
         $deleted = $wpdb->query($wpdb->prepare(
             "DELETE FROM $this->table_name WHERE brevo_status = 'synced' AND last_sync < DATE_SUB(NOW(), INTERVAL %d DAY)",
@@ -610,6 +745,10 @@ class ContactSynchronizer {
      */
     public function resync_errors() {
         global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return 0;
+        }
         
         $this->log("Début resynchronisation des contacts en erreur");
         
@@ -645,6 +784,10 @@ class ContactSynchronizer {
      */
     public function verify_brevo_status() {
         global $wpdb;
+        if (!$wpdb) {
+            $this->log("Erreur: Objet wpdb non disponible");
+            return ['verified' => 0, 'errors' => 0, 'fixed' => 0];
+        }
         
         $this->log("Début vérification des statuts Brevo");
         
@@ -656,9 +799,12 @@ class ContactSynchronizer {
         }
         
         // Récupérer tous les contacts marqués comme synchronisés
-        $contacts = $wpdb->get_results(
-            "SELECT * FROM $this->table_name WHERE brevo_status = 'synced' LIMIT 100"
-        );
+        $contacts = [];
+        if ($wpdb) {
+            $contacts = $wpdb->get_results(
+                "SELECT * FROM $this->table_name WHERE brevo_status = 'synced' LIMIT 100"
+            );
+        }
         
         if (empty($contacts)) {
             $this->log("Aucun contact synchronisé à vérifier");
@@ -701,7 +847,10 @@ class ContactSynchronizer {
                 }
                 
                 // Ajouter les champs personnalisés
-                $columns = $wpdb->get_results("SHOW COLUMNS FROM $this->table_name LIKE 'custom_%'");
+                $columns = [];
+                if ($wpdb) {
+                    $columns = $wpdb->get_results("SHOW COLUMNS FROM $this->table_name LIKE 'custom_%'");
+                }
                 if (!empty($columns)) {
                     foreach ($columns as $column) {
                         $field_name = $column->Field;
@@ -720,27 +869,31 @@ class ContactSynchronizer {
                 
                 if ($success && $this->brevo_connector->isContactInList($contact->email)) {
                     // Contact resynchronisé avec succès
-                    $wpdb->update(
-                        $this->table_name,
-                        [
-                            'brevo_status' => 'synced',
-                            'last_sync' => current_time('mysql'),
-                            'error_message' => null
-                        ],
-                        ['id' => $contact->id]
-                    );
+                    if ($wpdb) {
+                        $wpdb->update(
+                            $this->table_name,
+                            [
+                                'brevo_status' => 'synced',
+                                'last_sync' => current_time('mysql'),
+                                'error_message' => null
+                            ],
+                            ['id' => $contact->id]
+                        );
+                    }
                     $stats['fixed']++;
                     $this->log("Contact resynchronisé: {$contact->email}");
                 } else {
                     // Échec de resynchronisation
-                    $wpdb->update(
-                        $this->table_name,
-                        [
-                            'brevo_status' => 'error',
-                            'error_message' => 'Contact non trouvé dans Brevo après resynchronisation'
-                        ],
-                        ['id' => $contact->id]
-                    );
+                    if ($wpdb) {
+                        $wpdb->update(
+                            $this->table_name,
+                            [
+                                'brevo_status' => 'error',
+                                'error_message' => 'Contact non trouvé dans Brevo après resynchronisation'
+                            ],
+                            ['id' => $contact->id]
+                        );
+                    }
                     $this->log("Échec de resynchronisation pour {$contact->email}");
                 }
             }
