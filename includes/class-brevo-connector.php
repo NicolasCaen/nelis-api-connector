@@ -115,7 +115,11 @@ class BrevoConnector
         ]);
 
         if (!empty($data)) {
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($data));
+            $json_data = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            if ($json_data === false) {
+                throw new Exception("Erreur encodage JSON : " . json_last_error_msg());
+            }
+            curl_setopt($ch, CURLOPT_POSTFIELDS, $json_data);
         }
 
         $response = curl_exec($ch);
@@ -173,7 +177,7 @@ class BrevoConnector
             ];
             
             // Log des données envoyées à Brevo
-            error_log("Brevo: Envoi du contact $email avec attributs: " . json_encode($attributes));
+            error_log("Brevo: Envoi du contact $email avec attributs: " . json_encode($attributes, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
             
             $result = $this->request('POST', '/contacts', $data);
             error_log("Brevo: Contact $email ajouté avec succès");

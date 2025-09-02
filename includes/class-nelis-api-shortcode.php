@@ -39,7 +39,7 @@ class Nelis_API_Shortcode {
         }
         ?>
         <pre>
-<?php var_dump($contacts); ?>
+        <?php var_dump($contacts); ?>
     </pre>
     <?php
         return $this->format_contacts_output( $contacts );

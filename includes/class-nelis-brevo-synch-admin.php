@@ -29,18 +29,30 @@ class NelisBrevoSyncAdmin {
     }
     
     public function add_admin_menu() {
-        add_submenu_page(
-            'options-general.php',
+        // Page principale de synchronisation
+        add_menu_page(
             'Synchronisation Nelis-Brevo',
-            'Sync Nelis-Brevo',
+            'Nelis-Brevo Sync',
             'manage_options',
             'nelis-brevo-sync',
-            [$this, 'admin_page']
+            [$this, 'admin_page'],
+            'dashicons-update',
+            30
+        );
+        
+        // Sous-page Réglages
+        add_submenu_page(
+            'nelis-brevo-sync',
+            'Réglages Nelis-Brevo',
+            'Réglages',
+            'manage_options',
+            'nelis-brevo-settings',
+            [$this, 'settings_page']
         );
     }
     
     public function enqueue_scripts($hook) {
-        if ($hook !== 'settings_page_nelis-brevo-sync') {
+        if ($hook !== 'toplevel_page_nelis-brevo-sync' && $hook !== 'nelis-brevo-sync_page_nelis-brevo-settings') {
             return;
         }
         
@@ -373,46 +385,6 @@ class NelisBrevoSyncAdmin {
                         </form>
                     </p>
                     
-                    <!-- Configuration des champs cachés -->
-                    <?php if (!empty($custom_fields)): ?>
-                    <div style="margin-top: 20px;">
-                        <h4>Configuration des champs personnalisés</h4>
-                        <form method="post" action="">
-                            <?php wp_nonce_field('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce'); ?>
-                            <input type="hidden" name="action" value="update_hidden_fields">
-                            <p>Sélectionnez les champs à masquer:</p>
-                            <?php foreach ($custom_fields as $field): ?>
-                                <?php $field_name = str_replace('custom_', '', $field); ?>
-                                <label style="display: block; margin-bottom: 5px;">
-                                    <input type="checkbox" name="hidden_fields[]" value="<?php echo esc_attr($field); ?>" 
-                                        <?php checked(in_array($field, $this->hidden_fields)); ?>>
-                                    <?php echo esc_html($field_name); ?>
-                                </label>
-                            <?php endforeach; ?>
-                            <p><input type="submit" class="button" value="Enregistrer la configuration"></p>
-                        </form>
-                    </div>
-                    
-                    <!-- Configuration du filtre par date -->
-                    <div style="margin-top: 20px;">
-                        <h4>Filtre par date</h4>
-                        <form method="post" action="">
-                            <?php wp_nonce_field('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce'); ?>
-                            <input type="hidden" name="action" value="update_date_filter">
-                            <p>Sélectionnez le champ date pour filtrer les contacts (format YYYY-MM-DD):</p>
-                            <select name="date_filter_field">
-                                <?php foreach ($custom_fields as $field): ?>
-                                    <?php $field_name = str_replace('custom_', '', $field); ?>
-                                    <option value="<?php echo esc_attr($field); ?>" <?php selected($field, $this->date_filter_field); ?>>
-                                        <?php echo esc_html($field_name); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <p class="description">Les contacts seront synchronisés uniquement si ce champ contient une date valide au format YYYY-MM-DD et que cette date est inférieure à un an par rapport à aujourd'hui.</p>
-                            <p><input type="submit" class="button" value="Enregistrer la configuration"></p>
-                        </form>
-                    </div>
-                    <?php endif; ?>
                 </div>
             </div>
             
@@ -518,6 +490,127 @@ class NelisBrevoSyncAdmin {
                     <?php $this->display_recent_logs(); ?>
                 </div>
             </div>
+        </div>
+        <?php
+    }
+    
+    /**
+     * Page de réglages pour la configuration des champs personnalisés
+     */
+    public function settings_page() {
+        // Récupérer la structure de la table pour afficher tous les champs personnalisés
+        global $wpdb;
+        $table_name = '';
+        $table_structure = [];
+        $custom_fields = [];
+        
+        // Vérifier si $wpdb est disponible (il devrait l'être dans WordPress)
+        if ($wpdb) {
+            $table_name = $wpdb->prefix . 'nelis_brevo_sync';
+            $table_structure = $wpdb->get_results("DESCRIBE $table_name");
+            
+            // Si la requête échoue, initialiser un tableau vide
+            if (!$table_structure) {
+                $table_structure = [];
+            } else {
+                // Extraire les champs personnalisés
+                foreach ($table_structure as $column) {
+                    if (strpos($column->Field, 'custom_') === 0) {
+                        $custom_fields[] = $column->Field;
+                    }
+                }
+            }
+        }
+        
+        // Traitement du formulaire de configuration des champs cachés
+        if (isset($_POST['action']) && $_POST['action'] === 'update_hidden_fields') {
+            check_admin_referer('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce');
+            $hidden_fields = isset($_POST['hidden_fields']) ? (array) $_POST['hidden_fields'] : [];
+            update_option('nelis_brevo_hidden_fields', $hidden_fields);
+            $this->hidden_fields = $hidden_fields;
+            add_settings_error('nelis_brevo_sync', 'fields_updated', 'Configuration des champs mise à jour', 'success');
+        }
+        
+        // Traitement du formulaire de configuration du champ de filtre par date
+        if (isset($_POST['action']) && $_POST['action'] === 'update_date_filter') {
+            check_admin_referer('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce');
+            $date_filter_field = isset($_POST['date_filter_field']) ? sanitize_text_field($_POST['date_filter_field']) : 'custom_80';
+            update_option('nelis_brevo_date_filter_field', $date_filter_field);
+            $this->date_filter_field = $date_filter_field;
+            add_settings_error('nelis_brevo_sync', 'date_filter_updated', 'Configuration du filtre par date mise à jour', 'success');
+        }
+        
+        ?>
+        <div class="wrap">
+            <h1>Réglages Nelis-Brevo Sync</h1>
+            
+            <?php settings_errors('nelis_brevo_sync'); ?>
+            
+            <?php if (!empty($custom_fields)): ?>
+            <!-- Configuration des champs cachés -->
+            <div class="card" style="margin-bottom: 20px;">
+                <h2>Configuration des champs personnalisés</h2>
+                <form method="post" action="">
+                    <?php wp_nonce_field('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce'); ?>
+                    <input type="hidden" name="action" value="update_hidden_fields">
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row">Champs à masquer</th>
+                            <td>
+                                <fieldset>
+                                    <legend class="screen-reader-text"><span>Champs à masquer</span></legend>
+                                    <?php foreach ($custom_fields as $field): ?>
+                                        <?php $field_name = str_replace('custom_', '', $field); ?>
+                                        <label style="display: block; margin-bottom: 10px;">
+                                            <input type="checkbox" name="hidden_fields[]" value="<?php echo esc_attr($field); ?>" 
+                                                <?php checked(in_array($field, $this->hidden_fields)); ?>>
+                                            <strong><?php echo esc_html($field_name); ?></strong> (<?php echo esc_html($field); ?>)
+                                        </label>
+                                    <?php endforeach; ?>
+                                    <p class="description">Sélectionnez les champs personnalisés que vous souhaitez masquer dans le tableau de synchronisation.</p>
+                                </fieldset>
+                            </td>
+                        </tr>
+                    </table>
+                    <?php submit_button('Enregistrer la configuration des champs'); ?>
+                </form>
+            </div>
+            
+            <!-- Configuration du filtre par date -->
+            <div class="card">
+                <h2>Configuration du filtre par date</h2>
+                <form method="post" action="">
+                    <?php wp_nonce_field('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce'); ?>
+                    <input type="hidden" name="action" value="update_date_filter">
+                    <table class="form-table">
+                        <tr>
+                            <th scope="row">Champ de filtre par date</th>
+                            <td>
+                                <select name="date_filter_field" class="regular-text">
+                                    <?php foreach ($custom_fields as $field): ?>
+                                        <?php $field_name = str_replace('custom_', '', $field); ?>
+                                        <option value="<?php echo esc_attr($field); ?>" <?php selected($field, $this->date_filter_field); ?>>
+                                            <?php echo esc_html($field_name); ?> (<?php echo esc_html($field); ?>)
+                                        </option>
+                                    <?php endforeach; ?>
+                                </select>
+                                <p class="description">
+                                    Sélectionnez le champ personnalisé qui contient la date de référence pour filtrer les contacts.<br>
+                                    <strong>Format attendu :</strong> YYYY-MM-DD<br>
+                                    <strong>Règle :</strong> Les contacts seront synchronisés uniquement si ce champ contient une date valide et que cette date est inférieure à un an par rapport à aujourd'hui.
+                                </p>
+                            </td>
+                        </tr>
+                    </table>
+                    <?php submit_button('Enregistrer la configuration du filtre'); ?>
+                </form>
+            </div>
+            <?php else: ?>
+            <div class="notice notice-warning">
+                <p><strong>Aucun champ personnalisé détecté.</strong></p>
+                <p>Effectuez d'abord une synchronisation pour que les champs personnalisés soient créés automatiquement.</p>
+            </div>
+            <?php endif; ?>
         </div>
         <?php
     }
