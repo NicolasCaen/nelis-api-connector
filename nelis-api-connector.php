@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Nelis API Connector
  * Description: Connecte WordPress à l'API Nelis v4 pour récupérer les contacts avec un champ personnalisé de type date.
- * Version: 1.0
+ * Version: 1.1
  * Author: Nicolas GEHIN
  */
 
