@@ -18,6 +18,7 @@ require_once plugin_dir_path( __FILE__ ) . 'includes/class-nelis-api-shortcode.p
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-brevo-connector.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-contact-synchronizer.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-nelis-brevo-synch-admin.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/class-nelis-cron-manager.php';
 
 // Ajouter un cron job pour la sync automatique
 function nelis_brevo_schedule_sync() {
@@ -36,6 +37,7 @@ add_action('nelis_brevo_daily_sync', function() {
 function nelis_api_connector_init() {
     new Nelis_API_Settings();
     new Nelis_API_Shortcode();
+    new NelisCronManager();
 }
 add_action( 'plugins_loaded', 'nelis_api_connector_init' );
 
