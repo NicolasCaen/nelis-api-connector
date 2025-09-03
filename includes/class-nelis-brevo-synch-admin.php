@@ -1107,9 +1107,3 @@ class NelisBrevoSyncAdmin {
     }
 }
 
-// Ajouter cette classe à l'initialisation
-add_action('plugins_loaded', function() {
-    if (is_admin()) {
-        new NelisBrevoSyncAdmin();
-    }
-});

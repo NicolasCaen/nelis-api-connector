@@ -33,13 +33,21 @@ add_action('nelis_brevo_daily_sync', function() {
     $sync->incremental_sync();
 });
 
-// Initialiser les classes
+// Initialiser les classes générales
 function nelis_api_connector_init() {
     new Nelis_API_Settings();
     new Nelis_API_Shortcode();
-    new NelisCronManager();
-    new NelisBrevoSyncAdmin();
 }
+
+// Initialiser les classes admin
+function nelis_api_connector_admin_init() {
+    if (is_admin()) {
+        new NelisBrevoSyncAdmin();
+        new NelisCronManager();
+    }
+}
+
 add_action( 'plugins_loaded', 'nelis_api_connector_init' );
+add_action( 'init', 'nelis_api_connector_admin_init' );
 
 
