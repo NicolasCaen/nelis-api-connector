@@ -275,6 +275,42 @@ class BrevoConnector
         
         return $emails;
     }
+    
+    /**
+     * Supprimer un contact par son email
+     * 
+     * @param string $email Email du contact à supprimer
+     * @return bool True si la suppression a réussi, false sinon
+     */
+    public function deleteContactByEmail(string $email): bool
+    {
+        $url = $this->baseUrl . '/contacts/' . urlencode($email);
+        
+        $response = wp_remote_request($url, [
+            'method' => 'DELETE',
+            'headers' => [
+                'api-key' => $this->get_api_key(),
+                'Content-Type' => 'application/json'
+            ],
+            'timeout' => 30
+        ]);
+        
+        if (is_wp_error($response)) {
+            error_log("Erreur lors de la suppression du contact $email: " . $response->get_error_message());
+            return false;
+        }
+        
+        $status_code = wp_remote_retrieve_response_code($response);
+        
+        // Code 204 = suppression réussie, 404 = contact n'existe pas (considéré comme succès)
+        if ($status_code === 204 || $status_code === 404) {
+            return true;
+        }
+        
+        $body = wp_remote_retrieve_body($response);
+        error_log("Erreur lors de la suppression du contact $email. Code: $status_code, Réponse: $body");
+        return false;
+    }
 }
 
 /* ---------- Initialisation ---------- */

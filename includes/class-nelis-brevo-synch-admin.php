@@ -359,6 +359,11 @@ class NelisBrevoSyncAdmin {
                         </button>
                     </p>
                     <p>
+                        <button class="button button-secondary sync-button" data-sync-type="delete_all" data-original-text="Supprimer TOUS les contacts de Brevo" style="color: #a00;" onclick="return confirm('ATTENTION : Cette action va supprimer TOUS les contacts de la liste Brevo. Cette action est irréversible. Êtes-vous sûr de vouloir continuer ?');">
+                            Supprimer TOUS les contacts de Brevo
+                        </button>
+                    </p>
+                    <p>
                         <button class="button button-secondary sync-button" data-sync-type="clean_old" data-original-text="Supprimer les contacts locaux trop anciens (>1 an)">
                             Supprimer les contacts locaux trop anciens (>1 an)
                         </button>
@@ -759,6 +764,16 @@ class NelisBrevoSyncAdmin {
                 } else {
                     $message = "Nettoyage terminé: {$stats['deleted']} contacts supprimés de la base locale sur {$stats['to_delete']} identifiés comme trop anciens. ";
                     $message .= "Total: {$stats['total']} contacts dans la base locale.";
+                    wp_send_json_success($message);
+                }
+            } elseif ($type === 'delete_all') {
+                // Supprimer TOUS les contacts de Brevo
+                $stats = $this->synchronizer->delete_all_brevo_contacts();
+                if (isset($stats['error'])) {
+                    $message = "Erreur: {$stats['error']}";
+                    wp_send_json_error($message);
+                } else {
+                    $message = "Suppression terminée: {$stats['deleted']} contacts supprimés de Brevo sur {$stats['total']} identifiés.";
                     wp_send_json_success($message);
                 }
             } else {

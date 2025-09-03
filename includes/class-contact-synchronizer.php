@@ -1069,7 +1069,7 @@ class ContactSynchronizer {
         
         if (empty($local_emails)) {
             $this->log("Aucun contact local trouvé");
-            return ['total_brevo' => $total_brevo, 'total_local' => 0, 'to_delete' => 0, 'deleted' => 0];
+            return ['total_brevo' => $total_brevo, 'total_local' => $total_local, 'to_delete' => count($brevo_emails), 'deleted' => 0];
         }
         
         // Identifier les contacts à supprimer (présents dans Brevo mais pas dans la base locale)
@@ -1220,5 +1220,45 @@ class ContactSynchronizer {
         
         $this->log("Nettoyage terminé: $deleted_count contacts supprimés de la base locale sur $to_delete_count identifiés comme trop anciens");
         return $stats;
+    }
+    
+    /**
+     * Supprimer TOUS les contacts de Brevo
+     * 
+     * @return array Statistiques de suppression
+     */
+    public function delete_all_brevo_contacts() {
+        $this->log("Début de la suppression de TOUS les contacts Brevo");
+        
+        // Récupérer tous les emails de la liste Brevo
+        $this->log("Récupération de tous les emails de Brevo");
+        $brevo_emails = $this->brevo_connector->getAllContactEmails();
+        $total_brevo = count($brevo_emails);
+        $this->log("$total_brevo emails trouvés dans Brevo");
+        
+        if (empty($brevo_emails)) {
+            $this->log("Aucun contact trouvé dans Brevo");
+            return ['total' => 0, 'deleted' => 0];
+        }
+        
+        // Supprimer tous les contacts un par un
+        $deleted_count = 0;
+        foreach ($brevo_emails as $email) {
+            $this->log("Suppression du contact: $email");
+            $success = $this->brevo_connector->deleteContactByEmail($email);
+            if ($success) {
+                $deleted_count++;
+                $this->log("Contact supprimé avec succès: $email");
+            } else {
+                $this->log("Erreur lors de la suppression du contact: $email");
+            }
+            
+            // Petite pause pour éviter de surcharger l'API
+            usleep(100000); // 0.1 seconde
+        }
+        
+        $this->log("Suppression terminée: $deleted_count/$total_brevo contacts supprimés");
+        
+        return ['total' => $total_brevo, 'deleted' => $deleted_count];
     }
 }
