@@ -220,6 +220,64 @@ class NelisBrevoSyncAdmin {
                     });
                 });
             }
+            
+            // Fonction d'export CSV
+            const exportCsvBtn = document.getElementById('export-csv-btn');
+            if (exportCsvBtn) {
+                exportCsvBtn.addEventListener('click', function() {
+                    const table = document.getElementById('contacts-table');
+                    if (!table) {
+                        alert('Aucun tableau trouvé pour l\'export');
+                        return;
+                    }
+                    
+                    let csvContent = '';
+                    
+                    // Récupérer les en-têtes
+                    const headers = table.querySelectorAll('thead th');
+                    const headerRow = Array.from(headers).map(th => {
+                        return '"' + th.textContent.trim().replace(/"/g, '""') + '"';
+                    }).join(',');
+                    csvContent += headerRow + '\n';
+                    
+                    // Récupérer les données visibles (non filtrées)
+                    const rows = table.querySelectorAll('tbody tr');
+                    rows.forEach(function(row) {
+                        if (row.style.display !== 'none') {
+                            const cells = row.querySelectorAll('td');
+                            const rowData = Array.from(cells).map(td => {
+                                let cellText = td.textContent.trim();
+                                // Nettoyer le texte des badges de statut
+                                if (td.querySelector('.status-badge')) {
+                                    cellText = td.querySelector('.status-badge').textContent.trim();
+                                }
+                                return '"' + cellText.replace(/"/g, '""') + '"';
+                            }).join(',');
+                            csvContent += rowData + '\n';
+                        }
+                    });
+                    
+                    // Créer et télécharger le fichier
+                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                    const link = document.createElement('a');
+                    const url = URL.createObjectURL(blob);
+                    link.setAttribute('href', url);
+                    
+                    // Nom du fichier avec la date
+                    const now = new Date();
+                    const dateStr = now.getFullYear() + '-' + 
+                                  String(now.getMonth() + 1).padStart(2, '0') + '-' + 
+                                  String(now.getDate()).padStart(2, '0') + '_' +
+                                  String(now.getHours()).padStart(2, '0') + '-' +
+                                  String(now.getMinutes()).padStart(2, '0');
+                    
+                    link.setAttribute('download', 'contacts_nelis_brevo_' + dateStr + '.csv');
+                    link.style.visibility = 'hidden';
+                    document.body.appendChild(link);
+                    link.click();
+                    document.body.removeChild(link);
+                });
+            }
         });
         </script>
         <?php
@@ -323,83 +381,119 @@ class NelisBrevoSyncAdmin {
         
         
         ?>
-        <div class="wrap">
-            <h1>Synchronisation Nelis → Brevo</h1>
+        <div class="wrap nelis-brevo-sync">
+            <div class="sync-header">
+                <h1><span class="dashicons dashicons-update"></span> Synchronisation Nelis → Brevo</h1>
+                <p class="sync-description">Gérez la synchronisation des contacts entre Nelis et Brevo</p>
+            </div>
             
             <div id="sync-status"></div>
             
-            <!-- Statistiques -->
-            <div class="sync-stats">
-                <div class="stat-box">
-                    <h3>Statistiques</h3>
-                    <p>Total des contacts: <?php echo esc_html($stats['total'] ?? 0); ?></p>
-                    <p>Contacts synchronisés: <?php echo esc_html($stats['synced'] ?? 0); ?></p>
-                    <p>Contacts en attente: <?php echo esc_html($stats['pending'] ?? 0); ?></p>
-                    <p>Contacts en erreur: <?php echo esc_html($stats['error'] ?? 0); ?></p>
-                    <p>Dernière synchronisation: <?php echo esc_html($last_sync); ?></p>
+            <!-- Statistiques et Actions -->
+            <div class="sync-grid">
+                <div class="sync-card stats-card">
+                    <div class="card-header">
+                        <h2><span class="dashicons dashicons-chart-bar"></span> Statistiques</h2>
+                        <p class="card-description">État actuel de la synchronisation</p>
+                    </div>
+                    <div class="card-content">
+                        <div class="stats-grid">
+                            <div class="stat-item">
+                                <div class="stat-number"><?php echo esc_html($stats['total'] ?? 0); ?></div>
+                                <div class="stat-label">Total contacts</div>
+                            </div>
+                            <div class="stat-item success">
+                                <div class="stat-number"><?php echo esc_html($stats['synced'] ?? 0); ?></div>
+                                <div class="stat-label">Synchronisés</div>
+                            </div>
+                            <div class="stat-item warning">
+                                <div class="stat-number"><?php echo esc_html($stats['pending'] ?? 0); ?></div>
+                                <div class="stat-label">En attente</div>
+                            </div>
+                            <div class="stat-item error">
+                                <div class="stat-number"><?php echo esc_html($stats['error'] ?? 0); ?></div>
+                                <div class="stat-label">En erreur</div>
+                            </div>
+                        </div>
+                        <div class="last-sync">
+                            <span class="dashicons dashicons-clock"></span>
+                            Dernière sync: <?php echo esc_html($last_sync); ?>
+                        </div>
+                    </div>
                 </div>
                 
-                <div class="stat-box">
-                    <h3>Actions</h3>
-                    <p>
-                        <button class="button button-primary sync-button" data-sync-type="full" data-original-text="Synchronisation complète">
-                            Synchronisation complète
-                        </button>
-                    </p>
-                    <p>
-                        <button class="button sync-button" data-sync-type="incremental" data-original-text="Synchronisation incrémentielle">
-                            Synchronisation incrémentielle
-                        </button>
-                    </p>
-                    <p>
-                        <button class="button button-primary sync-button" data-sync-type="sync_all" data-original-text="Tout synchroniser vers Brevo">
-                            Tout synchroniser vers Brevo
-                        </button>
-                    </p>
-                    <p>
-                        <button class="button button-secondary sync-button" data-sync-type="verify" data-original-text="Vérifier la synchronisation avec Brevo">
-                            Vérifier la synchronisation avec Brevo
-                        </button>
-                    </p>
-
-                    <p>
-                        <button class="button button-secondary sync-button" data-sync-type="clean" data-original-text="Supprimer de Brevo les contacts absents localement">
-                            Supprimer de Brevo les contacts absents localement
-                        </button>
-                    </p>
-                    <p>
-                        <button class="button button-secondary sync-button" data-sync-type="delete_all" data-original-text="Supprimer TOUS les contacts de Brevo" style="color: #a00;" onclick="return confirm('ATTENTION : Cette action va supprimer TOUS les contacts de la liste Brevo. Cette action est irréversible. Êtes-vous sûr de vouloir continuer ?');">
-                            Supprimer TOUS les contacts de Brevo
-                        </button>
-                    </p>
-                    <p>
-                        <button class="button button-secondary sync-button" data-sync-type="clean_old" data-original-text="Supprimer les contacts locaux trop anciens (>1 an)">
-                            Supprimer les contacts locaux trop anciens (>1 an)
-                        </button>
-                    </p>
-                    <?php if (($stats['error'] ?? 0) > 0): ?>
-                    <p>
-                        <button id="retry-failed-button" class="button">Relancer les échecs</button>
-                    </p>
-                    <?php endif; ?>
-                    
-                    <!-- Bouton pour vider la table -->
-                    <p style="margin-top: 20px;">
-                        <form method="post" action="" onsubmit="return confirm('Attention : Cette action va supprimer toutes les données de synchronisation. Continuer ?');">
-                            <?php wp_nonce_field('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce'); ?>
-                            <input type="hidden" name="action" value="truncate_table">
-                            <button type="submit" class="button button-secondary" style="color: #a00;">
-                                Vider la table de synchronisation
+                <div class="sync-card actions-card">
+                    <div class="card-header">
+                        <h2><span class="dashicons dashicons-admin-tools"></span> Actions de synchronisation</h2>
+                        <p class="card-description">Lancez différents types de synchronisation</p>
+                    </div>
+                    <div class="card-content">
+                        <div class="action-buttons">
+                            <button class="action-btn primary sync-button" data-sync-type="full" data-original-text="Synchronisation complète">
+                                <span class="dashicons dashicons-download"></span>
+                                Synchronisation complète
                             </button>
-                        </form>
-                    </p>
-                    
+                            
+                            <button class="action-btn secondary sync-button" data-sync-type="incremental" data-original-text="Synchronisation incrémentielle">
+                                <span class="dashicons dashicons-update"></span>
+                                Synchronisation incrémentielle
+                            </button>
+                            
+                            <button class="action-btn primary sync-button" data-sync-type="sync_all" data-original-text="Tout synchroniser vers Brevo">
+                                <span class="dashicons dashicons-upload"></span>
+                                Tout synchroniser vers Brevo
+                            </button>
+                            
+                            <button class="action-btn secondary sync-button" data-sync-type="verify" data-original-text="Vérifier la synchronisation avec Brevo">
+                                <span class="dashicons dashicons-yes-alt"></span>
+                                Vérifier avec Brevo
+                            </button>
+                            
+                            <button class="action-btn secondary sync-button" data-sync-type="clean" data-original-text="Supprimer de Brevo les contacts absents localement">
+                                <span class="dashicons dashicons-trash"></span>
+                                Nettoyer Brevo
+                            </button>
+                            
+                            <button class="action-btn danger sync-button" data-sync-type="delete_all" data-original-text="Supprimer TOUS les contacts de Brevo" onclick="return confirm('ATTENTION : Cette action va supprimer TOUS les contacts de la liste Brevo. Cette action est irréversible. Êtes-vous sûr de vouloir continuer ?');">
+                                <span class="dashicons dashicons-warning"></span>
+                                Supprimer TOUS les contacts
+                            </button>
+                            
+                            <button class="action-btn secondary sync-button" data-sync-type="clean_old" data-original-text="Supprimer les contacts locaux trop anciens (>1 an)">
+                                <span class="dashicons dashicons-calendar-alt"></span>
+                                Supprimer anciens contacts
+                            </button>
+                            
+                            <?php if (($stats['error'] ?? 0) > 0): ?>
+                            <button id="retry-failed-button" class="action-btn warning">
+                                <span class="dashicons dashicons-redo"></span>
+                                Relancer les échecs
+                            </button>
+                            <?php endif; ?>
+                            
+                            <form method="post" action="" onsubmit="return confirm('Attention : Cette action va supprimer toutes les données de synchronisation. Continuer ?');" class="danger-form">
+                                <?php wp_nonce_field('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce'); ?>
+                                <input type="hidden" name="action" value="truncate_table">
+                                <button type="submit" class="action-btn danger">
+                                    <span class="dashicons dashicons-database-remove"></span>
+                                    Vider la table
+                                </button>
+                            </form>
+                        </div>
+                    </div>
                 </div>
             </div>
             
-            <!-- Recherche -->
-            <div style="margin: 20px 0;">
-                <input type="text" id="contact-search" placeholder="Rechercher un contact..." style="width: 300px; padding: 8px;">
+            <!-- Recherche et Export -->
+            <div class="search-export-container">
+                <div class="search-field">
+                    <span class="dashicons dashicons-search"></span>
+                    <input type="text" id="contact-search" placeholder="Rechercher un contact par nom, email..." class="search-input">
+                </div>
+                <button id="export-csv-btn" class="action-btn secondary">
+                    <span class="dashicons dashicons-download"></span>
+                    Exporter en CSV
+                </button>
             </div>
             
             <!-- Tableau des contacts -->
@@ -458,37 +552,322 @@ class NelisBrevoSyncAdmin {
             </div>
             
             <style>
-            .sync-stats {
-                display: flex;
-                gap: 20px;
-                margin-bottom: 20px;
+            /* Synchronization Page Styles */
+            .nelis-brevo-sync {
+                max-width: 1200px;
+                margin: 0;
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
             }
-            .stat-box {
-                background: #fff;
-                border: 1px solid #ccd0d4;
-                padding: 15px;
-                border-radius: 4px;
+            
+            .sync-header {
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                color: white;
+                padding: 2rem;
+                border-radius: 12px;
+                margin-bottom: 2rem;
+                box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+            }
+            
+            .sync-header h1 {
+                margin: 0 0 0.5rem 0;
+                font-size: 2rem;
+                font-weight: 600;
+                display: flex;
+                align-items: center;
+                gap: 0.75rem;
+            }
+            
+            .sync-header .dashicons {
+                font-size: 2rem;
+            }
+            
+            .sync-description {
+                margin: 0;
+                font-size: 1.1rem;
+                opacity: 0.9;
+            }
+            
+            .sync-grid {
+                display: grid;
+                grid-template-columns: 1fr 1fr;
+                gap: 2rem;
+                margin-bottom: 2rem;
+            }
+            
+            @media (max-width: 768px) {
+                .sync-grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+            
+            .sync-card {
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                overflow: hidden;
+                transition: transform 0.2s ease, box-shadow 0.2s ease;
+            }
+            
+            .sync-card:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+            }
+            
+            .card-header {
+                padding: 1.5rem;
+                border-bottom: 1px solid #e5e7eb;
+            }
+            
+            .stats-card .card-header {
+                background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+                color: white;
+            }
+            
+            .actions-card .card-header {
+                background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+                color: white;
+            }
+            
+            .card-header h2 {
+                margin: 0 0 0.5rem 0;
+                font-size: 1.25rem;
+                font-weight: 600;
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+            
+            .card-description {
+                margin: 0;
+                opacity: 0.9;
+                font-size: 0.9rem;
+            }
+            
+            .card-content {
+                padding: 1.5rem;
+            }
+            
+            .stats-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
+                margin-bottom: 1.5rem;
+            }
+            
+            .stat-item {
+                text-align: center;
+                padding: 1rem;
+                border-radius: 8px;
+                background: #f8fafc;
+                border: 2px solid #e2e8f0;
+            }
+            
+            .stat-item.success {
+                background: #f0fdf4;
+                border-color: #bbf7d0;
+            }
+            
+            .stat-item.warning {
+                background: #fffbeb;
+                border-color: #fde68a;
+            }
+            
+            .stat-item.error {
+                background: #fef2f2;
+                border-color: #fecaca;
+            }
+            
+            .stat-number {
+                font-size: 2rem;
+                font-weight: 700;
+                color: #1f2937;
+                margin-bottom: 0.25rem;
+            }
+            
+            .stat-label {
+                font-size: 0.875rem;
+                color: #6b7280;
+                font-weight: 500;
+            }
+            
+            .last-sync {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 1rem;
+                background: #f8fafc;
+                border-radius: 8px;
+                font-size: 0.9rem;
+                color: #4b5563;
+            }
+            
+            .action-buttons {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+                gap: 0.75rem;
+            }
+            
+            .action-btn {
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+                padding: 0.75rem 1rem;
+                border: none;
+                border-radius: 8px;
+                font-size: 0.9rem;
+                font-weight: 500;
+                cursor: pointer;
+                transition: all 0.2s ease;
+                text-decoration: none;
+                justify-content: flex-start;
+            }
+            
+            .action-btn:hover {
+                transform: translateY(-1px);
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+            }
+            
+            .action-btn.primary {
+                background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+                color: white;
+            }
+            
+            .action-btn.secondary {
+                background: linear-gradient(135deg, #6b7280 0%, #4b5563 100%);
+                color: white;
+            }
+            
+            .action-btn.warning {
+                background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+                color: white;
+            }
+            
+            .action-btn.danger {
+                background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+                color: white;
+            }
+            
+            .danger-form {
+                margin: 0;
+            }
+            
+            .search-export-container {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                margin-bottom: 2rem;
+                gap: 1rem;
+            }
+            
+            @media (max-width: 768px) {
+                .search-export-container {
+                    flex-direction: column;
+                    align-items: stretch;
+                }
+            }
+            
+            .search-field {
+                position: relative;
+                max-width: 400px;
                 flex: 1;
             }
+            
+            .search-field .dashicons {
+                position: absolute;
+                left: 12px;
+                top: 50%;
+                transform: translateY(-50%);
+                color: #6b7280;
+                font-size: 18px;
+            }
+            
+            .search-input {
+                width: 100%;
+                padding: 12px 12px 12px 40px;
+                border: 2px solid #e5e7eb;
+                border-radius: 8px;
+                font-size: 1rem;
+                transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            }
+            
+            .search-input:focus {
+                outline: none;
+                border-color: #3b82f6;
+                box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+            }
+            
+            .contacts-table-container {
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                overflow: hidden;
+                margin-bottom: 2rem;
+            }
+            
+            #contacts-table {
+                margin: 0;
+                border: none;
+            }
+            
+            #contacts-table th {
+                background: #f8fafc;
+                color: #374151;
+                font-weight: 600;
+                padding: 1rem;
+                border-bottom: 2px solid #e5e7eb;
+            }
+            
+            #contacts-table td {
+                padding: 0.75rem 1rem;
+                border-bottom: 1px solid #f3f4f6;
+            }
+            
+            #contacts-table tbody tr:hover {
+                background: #f8fafc;
+            }
+            
             .status-badge {
                 display: inline-block;
-                padding: 3px 8px;
-                border-radius: 3px;
-                font-size: 12px;
-                font-weight: bold;
+                padding: 4px 8px;
+                border-radius: 6px;
+                font-size: 11px;
+                font-weight: 600;
                 text-transform: uppercase;
+                letter-spacing: 0.5px;
             }
+            
             .status-synced {
-                background: #d4edda;
-                color: #155724;
+                background: #d1fae5;
+                color: #065f46;
             }
+            
             .status-pending {
-                background: #fff3cd;
-                color: #856404;
+                background: #fef3c7;
+                color: #92400e;
             }
+            
             .status-error {
-                background: #f8d7da;
-                color: #721c24;
+                background: #fee2e2;
+                color: #991b1b;
+            }
+            
+            .card {
+                background: white;
+                border-radius: 12px;
+                box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+                overflow: hidden;
+            }
+            
+            .card h3 {
+                margin: 0 0 1rem 0;
+                padding: 1.5rem 1.5rem 0 1.5rem;
+                color: #1f2937;
+                font-size: 1.25rem;
+                font-weight: 600;
+            }
+            
+            .card > div:last-child {
+                padding: 0 1.5rem 1.5rem 1.5rem;
             }
             </style>
             
@@ -824,71 +1203,107 @@ class NelisBrevoSyncAdmin {
      */
     public function settings_page() {
         ?>
-        <div class="wrap">
-            <h1>Réglages Nelis-Brevo</h1>
+        <div class="wrap nelis-brevo-settings">
+            <div class="settings-header">
+                <h1><span class="dashicons dashicons-admin-settings"></span> Réglages Nelis-Brevo</h1>
+                <p class="settings-description">Configurez les paramètres de connexion et de synchronisation entre Nelis et Brevo</p>
+            </div>
             
-            <form method="post" action="options.php">
+            <form method="post" action="options.php" class="settings-form">
                 <?php
                 settings_fields('nelis_brevo_settings');
                 do_settings_sections('nelis_brevo_settings');
                 ?>
                 
-                <h2>Configuration Brevo</h2>
-                <?php
-                $brevo_options = get_option('brevo_config', []);
-                ?>
-                <table class="form-table">
-                    <tr>
-                        <th scope="row">Clé API Brevo</th>
-                        <td>
-                            <input type="password" name="brevo_config[brevo_api_key]" value="<?php echo esc_attr($brevo_options['brevo_api_key'] ?? ''); ?>" class="regular-text" />
-                            <p class="description">Votre clé API Brevo (ex-Sendinblue)</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">ID de la liste Brevo</th>
-                        <td>
-                            <input type="number" name="brevo_config[brevo_list_id]" value="<?php echo esc_attr($brevo_options['brevo_list_id'] ?? ''); ?>" class="regular-text" />
-                            <p class="description">L'ID de la liste Brevo où synchroniser les contacts</p>
-                        </td>
-                    </tr>
-                </table>
+                <div class="settings-grid">
+                    <!-- Configuration Brevo -->
+                    <div class="settings-card brevo-config">
+                        <div class="card-header">
+                            <h2><span class="dashicons dashicons-email-alt"></span> Configuration Brevo</h2>
+                            <p class="card-description">Paramètres de connexion à l'API Brevo (ex-Sendinblue)</p>
+                        </div>
+                        <div class="card-content">
+                            <?php $brevo_options = get_option('brevo_config', []); ?>
+                            <div class="form-field">
+                                <label for="brevo_api_key">
+                                    <span class="field-icon dashicons dashicons-lock"></span>
+                                    Clé API Brevo
+                                </label>
+                                <input type="password" id="brevo_api_key" name="brevo_config[brevo_api_key]" 
+                                       value="<?php echo esc_attr($brevo_options['brevo_api_key'] ?? ''); ?>" 
+                                       class="form-input" placeholder="xkeysib-..." />
+                                <p class="field-description">Votre clé API Brevo disponible dans votre compte</p>
+                            </div>
+                            
+                            <div class="form-field">
+                                <label for="brevo_list_id">
+                                    <span class="field-icon dashicons dashicons-list-view"></span>
+                                    ID de la liste Brevo
+                                </label>
+                                <input type="number" id="brevo_list_id" name="brevo_config[brevo_list_id]" 
+                                       value="<?php echo esc_attr($brevo_options['brevo_list_id'] ?? ''); ?>" 
+                                       class="form-input" placeholder="123" />
+                                <p class="field-description">L'ID numérique de la liste où synchroniser les contacts</p>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <!-- Configuration Nelis -->
+                    <div class="settings-card nelis-config">
+                        <div class="card-header">
+                            <h2><span class="dashicons dashicons-database"></span> Configuration Nelis</h2>
+                            <p class="card-description">Paramètres de connexion à l'API Nelis v4</p>
+                        </div>
+                        <div class="card-content">
+                            <div class="form-field">
+                                <label for="nelis_client_id">
+                                    <span class="field-icon dashicons dashicons-admin-users"></span>
+                                    Client ID
+                                </label>
+                                <input type="text" id="nelis_client_id" name="nelis_api_client_id" 
+                                       value="<?php echo esc_attr(get_option('nelis_api_client_id')); ?>" 
+                                       class="form-input" placeholder="your-client-id" />
+                                <p class="field-description">Identifiant client fourni par Nelis</p>
+                            </div>
+                            
+                            <div class="form-field">
+                                <label for="nelis_client_secret">
+                                    <span class="field-icon dashicons dashicons-lock"></span>
+                                    Client Secret
+                                </label>
+                                <input type="password" id="nelis_client_secret" name="nelis_api_client_secret" 
+                                       value="<?php echo esc_attr(get_option('nelis_api_client_secret')); ?>" 
+                                       class="form-input" placeholder="••••••••••••••••" />
+                                <p class="field-description">Clé secrète associée au client ID</p>
+                            </div>
+                            
+                            <div class="form-field">
+                                <label for="nelis_username">
+                                    <span class="field-icon dashicons dashicons-admin-users"></span>
+                                    Nom d'utilisateur
+                                </label>
+                                <input type="text" id="nelis_username" name="nelis_api_username" 
+                                       value="<?php echo esc_attr(get_option('nelis_api_username')); ?>" 
+                                       class="form-input" placeholder="votre-username" />
+                                <p class="field-description">Nom d'utilisateur de votre compte Nelis</p>
+                            </div>
+                            
+                            <div class="form-field">
+                                <label for="nelis_password">
+                                    <span class="field-icon dashicons dashicons-lock"></span>
+                                    Mot de passe
+                                </label>
+                                <input type="password" id="nelis_password" name="nelis_api_password" 
+                                       value="<?php echo esc_attr(get_option('nelis_api_password')); ?>" 
+                                       class="form-input" placeholder="••••••••••••••••" />
+                                <p class="field-description">Mot de passe de votre compte Nelis</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
                 
-                <h2>Configuration Nelis</h2>
-                <table class="form-table">
-                    <tr>
-                        <th scope="row">Client ID</th>
-                        <td>
-                            <input type="text" name="nelis_api_client_id" value="<?php echo esc_attr(get_option('nelis_api_client_id')); ?>" class="regular-text" />
-                            <p class="description">Client ID de l'API Nelis</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Client Secret</th>
-                        <td>
-                            <input type="password" name="nelis_api_client_secret" value="<?php echo esc_attr(get_option('nelis_api_client_secret')); ?>" class="regular-text" />
-                            <p class="description">Client Secret de l'API Nelis</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Nom d'utilisateur</th>
-                        <td>
-                            <input type="text" name="nelis_api_username" value="<?php echo esc_attr(get_option('nelis_api_username')); ?>" class="regular-text" />
-                            <p class="description">Nom d'utilisateur Nelis</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Mot de passe</th>
-                        <td>
-                            <input type="password" name="nelis_api_password" value="<?php echo esc_attr(get_option('nelis_api_password')); ?>" class="regular-text" />
-                            <p class="description">Mot de passe Nelis</p>
-                        </td>
-                    </tr>
-                </table>
-                
-                <h2>Configuration des champs personnalisés</h2>
+                <!-- Configuration des champs personnalisés -->
                 <?php
-                // Récupérer la structure de la table
                 global $wpdb;
                 $table_name = $wpdb->prefix . 'nelis_brevo_sync';
                 $table_structure = $wpdb->get_results("SHOW COLUMNS FROM $table_name");
@@ -904,25 +1319,37 @@ class NelisBrevoSyncAdmin {
                 ?>
                 
                 <?php if (!empty($custom_fields)): ?>
-                <table class="form-table">
-                    <tr>
-                        <th scope="row">Champs masqués</th>
-                        <td>
-                            <?php foreach ($custom_fields as $field): ?>
-                                <?php $field_name = str_replace('custom_', '', $field); ?>
-                                <label style="display: block; margin-bottom: 5px;">
-                                    <input type="checkbox" name="nelis_brevo_hidden_fields[]" value="<?php echo esc_attr($field); ?>" 
-                                        <?php checked(in_array($field, get_option('nelis_brevo_hidden_fields', []))); ?>>
-                                    <?php echo esc_html($field_name); ?>
-                                </label>
-                            <?php endforeach; ?>
-                            <p class="description">Sélectionnez les champs à masquer dans l'interface de synchronisation</p>
-                        </td>
-                    </tr>
-                    <tr>
-                        <th scope="row">Champ de filtre par date</th>
-                        <td>
-                            <select name="nelis_brevo_date_filter_field">
+                <div class="settings-card custom-fields-config">
+                    <div class="card-header">
+                        <h2><span class="dashicons dashicons-admin-generic"></span> Configuration des champs personnalisés</h2>
+                        <p class="card-description">Gérez l'affichage et le filtrage des champs personnalisés</p>
+                    </div>
+                    <div class="card-content">
+                        <div class="form-field">
+                            <label>
+                                <span class="field-icon dashicons dashicons-hidden"></span>
+                                Champs masqués
+                            </label>
+                            <div class="checkbox-grid">
+                                <?php foreach ($custom_fields as $field): ?>
+                                    <?php $field_name = str_replace('custom_', '', $field); ?>
+                                    <label class="checkbox-item">
+                                        <input type="checkbox" name="nelis_brevo_hidden_fields[]" value="<?php echo esc_attr($field); ?>" 
+                                            <?php checked(in_array($field, get_option('nelis_brevo_hidden_fields', []))); ?>>
+                                        <span class="checkmark"></span>
+                                        <span class="checkbox-label"><?php echo esc_html($field_name); ?></span>
+                                    </label>
+                                <?php endforeach; ?>
+                            </div>
+                            <p class="field-description">Sélectionnez les champs à masquer dans l'interface de synchronisation</p>
+                        </div>
+                        
+                        <div class="form-field">
+                            <label for="date_filter_field">
+                                <span class="field-icon dashicons dashicons-calendar-alt"></span>
+                                Champ de filtre par date
+                            </label>
+                            <select id="date_filter_field" name="nelis_brevo_date_filter_field" class="form-select">
                                 <?php foreach ($custom_fields as $field): ?>
                                     <?php $field_name = str_replace('custom_', '', $field); ?>
                                     <option value="<?php echo esc_attr($field); ?>" <?php selected($field, get_option('nelis_brevo_date_filter_field', 'custom_80')); ?>>
@@ -930,15 +1357,224 @@ class NelisBrevoSyncAdmin {
                                     </option>
                                 <?php endforeach; ?>
                             </select>
-                            <p class="description">Champ utilisé pour filtrer les contacts par date (format YYYY-MM-DD, contacts de moins d'un an)</p>
-                        </td>
-                    </tr>
-                </table>
+                            <p class="field-description">Champ utilisé pour filtrer les contacts par date (format YYYY-MM-DD, contacts de moins d'un an)</p>
+                        </div>
+                    </div>
+                </div>
                 <?php endif; ?>
                 
-                <?php submit_button(); ?>
+                <div class="settings-actions">
+                    <?php submit_button('Sauvegarder les réglages', 'primary large', 'submit', false, ['id' => 'save-settings']); ?>
+                </div>
             </form>
         </div>
+        
+        <style>
+        .nelis-brevo-settings {
+            max-width: 1200px;
+            margin: 0;
+        }
+        
+        .settings-header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+            box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+        }
+        
+        .settings-header h1 {
+            margin: 0 0 10px 0;
+            font-size: 28px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .settings-header .dashicons {
+            font-size: 32px;
+            width: 32px;
+            height: 32px;
+        }
+        
+        .settings-description {
+            margin: 0;
+            font-size: 16px;
+            opacity: 0.9;
+        }
+        
+        .settings-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin-bottom: 30px;
+        }
+        
+        @media (max-width: 1024px) {
+            .settings-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        .settings-card {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 2px 20px rgba(0, 0, 0, 0.08);
+            overflow: hidden;
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        .settings-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 30px rgba(0, 0, 0, 0.12);
+        }
+        
+        .card-header {
+            background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+            padding: 25px;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .brevo-config .card-header {
+            background: linear-gradient(135deg, #e3f2fd 0%, #bbdefb 100%);
+        }
+        
+        .nelis-config .card-header {
+            background: linear-gradient(135deg, #f3e5f5 0%, #e1bee7 100%);
+        }
+        
+        .custom-fields-config .card-header {
+            background: linear-gradient(135deg, #e8f5e8 0%, #c8e6c9 100%);
+        }
+        
+        .card-header h2 {
+            margin: 0 0 8px 0;
+            font-size: 20px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #2c3e50;
+        }
+        
+        .card-description {
+            margin: 0;
+            color: #6c757d;
+            font-size: 14px;
+        }
+        
+        .card-content {
+            padding: 25px;
+        }
+        
+        .form-field {
+            margin-bottom: 25px;
+        }
+        
+        .form-field:last-child {
+            margin-bottom: 0;
+        }
+        
+        .form-field label {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            color: #2c3e50;
+            margin-bottom: 8px;
+            font-size: 14px;
+        }
+        
+        .field-icon {
+            color: #6c757d;
+            font-size: 16px;
+        }
+        
+        .form-input, .form-select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e9ecef;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.2s ease, box-shadow 0.2s ease;
+            background: white;
+        }
+        
+        .form-input:focus, .form-select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .field-description {
+            margin: 8px 0 0 0;
+            font-size: 13px;
+            color: #6c757d;
+            font-style: italic;
+        }
+        
+        .checkbox-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 12px;
+            margin: 12px 0;
+        }
+        
+        .checkbox-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        
+        .checkbox-item:hover {
+            background: #e9ecef;
+        }
+        
+        .checkbox-item input[type="checkbox"] {
+            margin: 0;
+        }
+        
+        .checkbox-label {
+            font-size: 14px;
+            color: #495057;
+        }
+        
+        .custom-fields-config {
+            grid-column: 1 / -1;
+        }
+        
+        .settings-actions {
+            text-align: center;
+            padding: 30px 0;
+        }
+        
+        #save-settings {
+            background: linear-gradient(135deg, #28a745 0%, #20c997 100%);
+            border: none;
+            padding: 15px 40px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 8px;
+            box-shadow: 0 4px 15px rgba(40, 167, 69, 0.3);
+            transition: transform 0.2s ease, box-shadow 0.2s ease;
+        }
+        
+        #save-settings:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(40, 167, 69, 0.4);
+        }
+        
+        .settings-form {
+            background: transparent;
+        }
+        </style>
         <?php
     }
     
