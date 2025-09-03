@@ -20,13 +20,8 @@ class BrevoConnector
 
     public function add_admin_menu()
     {
-        add_options_page(
-            'Brevo Config',
-            'Brevo Config',
-            'manage_options',
-            'brevo-config',
-            [$this, 'admin_page']
-        );
+        // Ne plus créer de page dans le menu Réglages
+        // La configuration Brevo sera accessible via le menu Nelis-Brevo Sync
     }
 
     public function settings_init()

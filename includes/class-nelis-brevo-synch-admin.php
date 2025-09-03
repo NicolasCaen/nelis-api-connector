@@ -49,10 +49,40 @@ class NelisBrevoSyncAdmin {
             'nelis-brevo-settings',
             [$this, 'settings_page']
         );
+        
+        // Sous-page Configuration Brevo
+        add_submenu_page(
+            'nelis-brevo-sync',
+            'Configuration Brevo',
+            'Config Brevo',
+            'manage_options',
+            'brevo-config',
+            [$this, 'brevo_config_page']
+        );
+        
+        // Sous-page Configuration Nelis
+        add_submenu_page(
+            'nelis-brevo-sync',
+            'Configuration Nelis API',
+            'Config Nelis',
+            'manage_options',
+            'nelis-config',
+            [$this, 'nelis_config_page']
+        );
+        
+        // Sous-page Documentation Shortcodes
+        add_submenu_page(
+            'nelis-brevo-sync',
+            'Documentation Shortcodes',
+            'Shortcodes',
+            'manage_options',
+            'nelis-shortcodes-doc',
+            [$this, 'shortcodes_doc_page']
+        );
     }
     
     public function enqueue_scripts($hook) {
-        if ($hook !== 'toplevel_page_nelis-brevo-sync' && $hook !== 'nelis-brevo-sync_page_nelis-brevo-settings') {
+        if ($hook !== 'toplevel_page_nelis-brevo-sync' && $hook !== 'nelis-brevo-sync_page_nelis-brevo-settings' && $hook !== 'nelis-brevo-sync_page_brevo-config' && $hook !== 'nelis-brevo-sync_page_nelis-config' && $hook !== 'nelis-brevo-sync_page_nelis-shortcodes-doc') {
             return;
         }
         
@@ -616,6 +646,185 @@ class NelisBrevoSyncAdmin {
     }
     
     /**
+     * Page de configuration Brevo
+     */
+    public function brevo_config_page() {
+        // Récupérer l'instance du BrevoConnector
+        $brevo_connector = new BrevoConnector();
+        
+        // Afficher la page de configuration
+        $brevo_connector->admin_page();
+    }
+    
+    /**
+     * Page de configuration Nelis API
+     */
+    public function nelis_config_page() {
+        // Récupérer l'instance du Nelis_API_Settings
+        $nelis_settings = new Nelis_API_Settings();
+        
+        // Afficher la page de configuration
+        $nelis_settings->options_page_html();
+    }
+    
+    /**
+     * Page de documentation des shortcodes
+     */
+    public function shortcodes_doc_page() {
+        ?>
+        <div class="wrap">
+            <h1>Documentation des Shortcodes Nelis</h1>
+            
+            <div class="card" style="margin-bottom: 20px;">
+                <h2>Shortcodes disponibles</h2>
+                <p>Voici la liste de tous les shortcodes disponibles avec le plugin Nelis API Connector :</p>
+            </div>
+            
+            <!-- nelis_contacts -->
+            <div class="card" style="margin-bottom: 20px; padding: 20px;">
+                <h3><code>[nelis_contacts]</code></h3>
+                <p><strong>Description :</strong> Affiche tous les contacts filtrés par le champ de date personnalisé.</p>
+                <p><strong>Usage :</strong></p>
+                <div style="background: #f1f1f1; padding: 10px; border-radius: 4px; font-family: monospace;">
+                    [nelis_contacts]
+                </div>
+                <p><strong>Paramètres :</strong> Aucun</p>
+                <p><strong>Exemple d'affichage :</strong> Liste formatée de tous les contacts avec nom, email, fonction et champs personnalisés.</p>
+            </div>
+            
+            <!-- nelis_contact -->
+            <div class="card" style="margin-bottom: 20px; padding: 20px;">
+                <h3><code>[nelis_contact]</code></h3>
+                <p><strong>Description :</strong> Affiche un contact spécifique par son ID.</p>
+                <p><strong>Usage :</strong></p>
+                <div style="background: #f1f1f1; padding: 10px; border-radius: 4px; font-family: monospace;">
+                    [nelis_contact id="123"]
+                </div>
+                <p><strong>Paramètres :</strong></p>
+                <ul>
+                    <li><strong>id</strong> (requis) : L'ID du contact à afficher</li>
+                </ul>
+                <p><strong>Exemple :</strong> <code>[nelis_contact id="456"]</code></p>
+            </div>
+            
+            <!-- nelis_adherents -->
+            <div class="card" style="margin-bottom: 20px; padding: 20px;">
+                <h3><code>[nelis_adherents]</code></h3>
+                <p><strong>Description :</strong> Affiche tous les adhérents.</p>
+                <p><strong>Usage :</strong></p>
+                <div style="background: #f1f1f1; padding: 10px; border-radius: 4px; font-family: monospace;">
+                    [nelis_adherents]
+                </div>
+                <p><strong>Paramètres :</strong> Aucun</p>
+                <p><strong>Exemple d'affichage :</strong> Liste formatée de tous les adhérents avec leurs informations.</p>
+            </div>
+            
+            <!-- nelis_contacts_by_date -->
+            <div class="card" style="margin-bottom: 20px; padding: 20px;">
+                <h3><code>[nelis_contacts_by_date]</code></h3>
+                <p><strong>Description :</strong> Affiche les contacts filtrés par une date spécifique dans un champ personnalisé.</p>
+                <p><strong>Usage :</strong></p>
+                <div style="background: #f1f1f1; padding: 10px; border-radius: 4px; font-family: monospace;">
+                    [nelis_contacts_by_date date="2023-01-01"]
+                </div>
+                <p><strong>Paramètres :</strong></p>
+                <ul>
+                    <li><strong>date</strong> (requis) : Date au format YYYY-MM-DD</li>
+                </ul>
+                <p><strong>Exemple :</strong> <code>[nelis_contacts_by_date date="2024-03-15"]</code></p>
+            </div>
+            
+            <!-- nelis_contacts_created_since -->
+            <div class="card" style="margin-bottom: 20px; padding: 20px;">
+                <h3><code>[nelis_contacts_created_since]</code></h3>
+                <p><strong>Description :</strong> Affiche les contacts créés depuis une date donnée.</p>
+                <p><strong>Usage :</strong></p>
+                <div style="background: #f1f1f1; padding: 10px; border-radius: 4px; font-family: monospace;">
+                    [nelis_contacts_created_since date="2023-01-01"]
+                </div>
+                <p><strong>Paramètres :</strong></p>
+                <ul>
+                    <li><strong>date</strong> (requis) : Date de début au format YYYY-MM-DD</li>
+                </ul>
+                <p><strong>Exemple :</strong> <code>[nelis_contacts_created_since date="2024-01-01"]</code></p>
+            </div>
+            
+            <!-- nelis_contacts_updated_since -->
+            <div class="card" style="margin-bottom: 20px; padding: 20px;">
+                <h3><code>[nelis_contacts_updated_since]</code></h3>
+                <p><strong>Description :</strong> Affiche les contacts mis à jour depuis une date donnée.</p>
+                <p><strong>Usage :</strong></p>
+                <div style="background: #f1f1f1; padding: 10px; border-radius: 4px; font-family: monospace;">
+                    [nelis_contacts_updated_since date="2023-01-01"]
+                </div>
+                <p><strong>Paramètres :</strong></p>
+                <ul>
+                    <li><strong>date</strong> (requis) : Date de début au format YYYY-MM-DD</li>
+                </ul>
+                <p><strong>Exemple :</strong> <code>[nelis_contacts_updated_since date="2024-02-01"]</code></p>
+            </div>
+            
+            <!-- Notes importantes -->
+            <div class="card" style="margin-bottom: 20px; padding: 20px; background: #fff3cd; border-left: 4px solid #ffc107;">
+                <h3>Notes importantes</h3>
+                <ul>
+                    <li><strong>Configuration requise :</strong> Assurez-vous que les paramètres de l'API Nelis sont correctement configurés dans Config Nelis.</li>
+                    <li><strong>Format des dates :</strong> Toutes les dates doivent être au format YYYY-MM-DD (ex: 2024-03-15).</li>
+                    <li><strong>Champs personnalisés :</strong> Les shortcodes affichent automatiquement tous les champs personnalisés disponibles.</li>
+                    <li><strong>Gestion d'erreur :</strong> Si aucun contact n'est trouvé ou en cas d'erreur, un message informatif sera affiché.</li>
+                </ul>
+            </div>
+            
+            <!-- Exemples d'utilisation -->
+            <div class="card" style="margin-bottom: 20px; padding: 20px; background: #d4edda; border-left: 4px solid #28a745;">
+                <h3>Exemples d'utilisation dans une page/article</h3>
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; margin: 10px 0;">
+                    <strong>Page "Nos adhérents" :</strong><br>
+                    &lt;h2&gt;Liste de nos adhérents&lt;/h2&gt;<br>
+                    [nelis_adherents]
+                </div>
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; margin: 10px 0;">
+                    <strong>Page "Nouveaux membres" :</strong><br>
+                    &lt;h2&gt;Membres inscrits depuis le 1er janvier 2024&lt;/h2&gt;<br>
+                    [nelis_contacts_created_since date="2024-01-01"]
+                </div>
+                <div style="background: #f8f9fa; padding: 15px; border-radius: 4px; font-family: monospace; margin: 10px 0;">
+                    <strong>Page de profil spécifique :</strong><br>
+                    &lt;h2&gt;Profil du contact&lt;/h2&gt;<br>
+                    [nelis_contact id="789"]
+                </div>
+            </div>
+        </div>
+        
+        <style>
+        .card {
+            background: #fff;
+            border: 1px solid #ccd0d4;
+            border-radius: 4px;
+            padding: 15px;
+        }
+        .card h3 {
+            margin-top: 0;
+            color: #23282d;
+        }
+        .card code {
+            background: #f1f1f1;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: Consolas, Monaco, monospace;
+            color: #d63384;
+        }
+        .card ul {
+            margin-left: 20px;
+        }
+        .card li {
+            margin-bottom: 5px;
+        }
+        </style>
+        <?php
+    }
+    
+    /**
      * Récupère tous les contacts pour l'affichage dans l'interface d'administration
      * 
      * @param int|null $limit Limite du nombre de contacts à récupérer (null pour tous)
@@ -674,7 +883,7 @@ class NelisBrevoSyncAdmin {
     
     private function display_recent_logs() {
         // Afficher les logs récents du système
-        $log_file = WP_CONTENT_DIR . '/debug.log';
+        $log_file = defined('WP_CONTENT_DIR') ? WP_CONTENT_DIR . '/debug.log' : '';
         
         if (file_exists($log_file)) {
             $lines = file($log_file);

@@ -12,13 +12,8 @@ class Nelis_API_Settings {
     }
 
     public function add_admin_menu() {
-        add_options_page(
-            'Nelis API Settings',
-            'Nelis API',
-            'manage_options',
-            'nelis-api-connector',
-            array( $this, 'options_page_html' )
-        );
+        // Ne plus créer de page dans le menu Réglages
+        // La configuration Nelis sera accessible via le menu Nelis-Brevo Sync
     }
     // Ajouter ces méthodes à la classe
     public function ajax_sync() {
@@ -134,9 +129,7 @@ class Nelis_API_Settings {
                 do_settings_sections( 'nelis-api-connector' );
                 submit_button( 'Sauvegarder les modifications' );
                 ?>
-            </form> 
-            <?php echo do_shortcode('[nelis_adherents]') ?>
-            
+            </form>             
         </div>
         <?php
     }

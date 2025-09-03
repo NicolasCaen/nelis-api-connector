@@ -54,14 +54,14 @@ class Nelis_API_Shortcode {
         $contact = $api_client->get_contact_by_id ($atts['id'] );
         ?>
         <pre>
-<?php var_dump($contact); ?>
-    </pre>
-<?php
+            <?php var_dump($contact); ?>
+                </pre>
+            <?php
         if ( ! $contact ) {
             return '<p>Aucun contact trouvé aveccet ID.</p>';
         }
 
-        return ;
+        return $this->format_contacts_output( $contact );
     }
     
     /**
