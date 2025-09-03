@@ -938,9 +938,14 @@ class ContactSynchronizer {
         $brevo_emails = $this->brevo_connector->getAllContactEmails();
         $this->log(count($brevo_emails) . " emails trouvés dans Brevo");
         
+        // Debug: afficher les premiers emails trouvés
+        if (!empty($brevo_emails)) {
+            $this->log("Premiers emails Brevo: " . implode(', ', array_slice($brevo_emails, 0, 5)));
+        }
+        
         if (empty($brevo_emails)) {
-            $this->log("Aucun contact trouvé dans Brevo");
-            return ['verified' => 0, 'errors' => 0, 'fixed' => 0, 'not_in_brevo' => 0, 'in_brevo' => 0];
+            $this->log("Aucun contact trouvé dans Brevo - vérifiez la configuration API");
+            // Ne pas s'arrêter ici, continuer pour vérifier les contacts locaux
         }
         
         // Récupérer tous les contacts de la base locale
@@ -952,11 +957,17 @@ class ContactSynchronizer {
         }
         
         if (empty($contacts)) {
-            $this->log("Aucun contact local à vérifier");
+            $this->log("Aucun contact local à vérifier - table vide ou problème de requête");
+            $this->log("Table utilisée: " . $this->table_name);
             return ['verified' => 0, 'errors' => 0, 'fixed' => 0, 'not_in_brevo' => 0, 'in_brevo' => 0];
         }
         
         $this->log("Vérification de " . count($contacts) . " contacts locaux");
+        
+        // Debug: afficher quelques contacts locaux
+        foreach (array_slice($contacts, 0, 3) as $contact) {
+            $this->log("Contact local: {$contact->email} - statut: {$contact->brevo_status}");
+        }
         
         $stats = [
             'verified' => 0,   // Contacts déjà correctement marqués comme synchronisés
