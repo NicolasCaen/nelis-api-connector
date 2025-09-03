@@ -60,6 +60,15 @@ class NelisBrevoSyncAdmin {
             'nelis-brevo-settings',
             [$this, 'settings_page']
         );
+        
+        add_submenu_page(
+            'nelis-brevo-sync',
+            'URLs de Cron Nelis-Brevo',
+            'URLs de Cron',
+            'manage_options',
+            'nelis-brevo-cron-urls',
+            [$this, 'cron_urls_page']
+        );
     }
     
     public function enqueue_scripts($hook) {
@@ -931,6 +940,171 @@ class NelisBrevoSyncAdmin {
             </form>
         </div>
         <?php
+    }
+    
+    /**
+     * Page d'administration pour les URLs de cron
+     */
+    public function cron_urls_page() {
+        // Récupérer l'instance des routes de cron
+        $cron_routes = new NelisBrevosCronRoutes();
+        
+        // Gérer la régénération du token
+        if (isset($_POST['action']) && $_POST['action'] === 'regenerate_token') {
+            check_admin_referer('regenerate_cron_token');
+            $cron_routes->regenerate_secret_key();
+            echo '<div class="notice notice-success"><p>Token régénéré avec succès !</p></div>';
+        }
+        ?>
+        <div class="wrap">
+        <h2>URLs de Cron pour Nelis-Brevo Sync</h2>
+        
+        <div class="notice notice-info">
+            <p><strong>Information :</strong> Ces URLs utilisent l'API REST WordPress pour une meilleure fiabilité. Format : <code>/wp-json/nelis-brevo/v1/{action}?token={token}</code></p>
+        </div>
+
+        <h3>🔑 Token de sécurité</h3>
+        <div class="postbox">
+            <div class="inside">
+                <p><strong>Token actuel :</strong> <code id="current-token"><?php echo esc_html($cron_routes->get_secret_key()); ?></code></p>
+                <form method="post" style="margin-top: 10px;">
+                    <?php wp_nonce_field('regenerate_cron_token'); ?>
+                    <input type="hidden" name="action" value="regenerate_token">
+                    <button type="submit" class="button button-secondary" onclick="return confirm('Êtes-vous sûr de vouloir régénérer le token ? Cela invalidera toutes les URLs existantes.')">
+                        🔄 Régénérer le token
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <h3>🌐 URLs disponibles</h3>
+        <div class="postbox">
+            <div class="inside">
+                <p><strong>URL de base :</strong> <code><?php echo esc_html($cron_routes->get_cron_base_url()); ?></code></p>
+                
+                <table class="widefat fixed striped">
+                    <thead>
+                        <tr>
+                            <th>Action</th>
+                            <th>URL complète</th>
+                            <th>Description</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php
+                        $actions = [
+                            'sync-incremental' => 'Synchronisation incrémentale (contacts modifiés)',
+                            'sync-all' => 'Synchronisation complète (tous les contacts en attente)',
+                            'verify-status' => 'Vérification des statuts de synchronisation',
+                            'clean-brevo' => 'Nettoyage des contacts Brevo non présents localement',
+                            'clean-old' => 'Suppression des contacts locaux anciens',
+                            'fetch-nelis' => 'Récupération de nouveaux contacts depuis Nelis',
+                            'status' => 'Obtenir le statut de synchronisation'
+                        ];
+                        
+                        foreach ($actions as $action => $description) {
+                            $url = $cron_routes->get_cron_base_url() . $action . '?token=' . $cron_routes->get_secret_key();
+                            echo '<tr>';
+                            echo '<td><code>' . esc_html($action) . '</code></td>';
+                            echo '<td><input type="text" value="' . esc_attr($url) . '" readonly style="width: 100%; font-family: monospace; font-size: 11px;" onclick="this.select()"></td>';
+                            echo '<td>' . esc_html($description) . '</td>';
+                            echo '</tr>';
+                        }
+                        ?>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+            
+            <div class="card">
+                <h2>⚙️ Configuration Cron</h2>
+                
+                <h3>Exemple crontab Linux/Mac :</h3>
+                <pre><code># Synchronisation incrémentale toutes les heures
+0 * * * * curl -s "<?php echo esc_html($base_url . 'sync-incremental?token=' . $secret_key); ?>"
+
+# Synchronisation complète tous les jours à 2h du matin
+0 2 * * * curl -s "<?php echo esc_html($base_url . 'sync-all?token=' . $secret_key); ?>"
+
+# Vérification des statuts tous les jours à 6h du matin
+0 6 * * * curl -s "<?php echo esc_html($base_url . 'verify-status?token=' . $secret_key); ?>"</code></pre>
+                
+                <h3>Exemple avec wget :</h3>
+                <pre><code>wget -q -O - "<?php echo esc_html($base_url . 'sync-incremental?token=' . $secret_key); ?>"</code></pre>
+                
+                <h3>Exemple avec PowerShell (Windows) :</h3>
+                <pre><code>Invoke-WebRequest -Uri "<?php echo esc_html($base_url . 'sync-incremental?token=' . $secret_key); ?>" -UseBasicParsing</code></pre>
+            </div>
+            
+            <div class="card">
+                <h2>📊 Réponses JSON</h2>
+                <p>Toutes les URLs retournent une réponse JSON avec les informations suivantes :</p>
+                
+                <h4>Succès :</h4>
+                <pre><code>{
+  "success": true,
+  "action": "sync-incremental",
+  "message": "Synchronisation incrémentale: 5 contacts synchronisés",
+  "contacts_synced": 5,
+  "execution_time": 2.34,
+  "timestamp": "2025-01-03 14:30:00",
+  "server": "votre-site.com"
+}</code></pre>
+                
+                <h4>Erreur :</h4>
+                <pre><code>{
+  "success": false,
+  "error": "Message d'erreur",
+  "action": "sync-incremental",
+  "execution_time": 0.12,
+  "timestamp": "2025-01-03 14:30:00",
+  "server": "votre-site.com"
+}</code></pre>
+            </div>
+            
+            <div class="card">
+                <h2>🔍 Test rapide</h2>
+                <p>Vous pouvez tester les URLs directement dans votre navigateur :</p>
+                
+                <p><a href="<?php echo esc_url($cron_routes->get_cron_base_url() . 'status?token=' . $cron_routes->get_secret_key()); ?>" target="_blank" class="button button-primary">Tester l'URL de statut</a></p>
+            </div>
+        </div>
+        
+        <style>
+        .card {
+            background: #fff;
+            border: 1px solid #ccd0d4;
+            border-radius: 4px;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+        .card h2 {
+            margin-top: 0;
+        }
+        pre {
+            background: #f6f7f7;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            padding: 10px;
+            overflow-x: auto;
+        }
+        code {
+            background: #f6f7f7;
+            padding: 2px 4px;
+            border-radius: 2px;
+            font-family: Consolas, Monaco, monospace;
+        }
+        </style>
+        
+        <?php
+        
+        // Gérer la régénération du token
+        if (isset($_POST['action']) && $_POST['action'] === 'regenerate_token') {
+            if (wp_verify_nonce($_POST['_wpnonce'], 'regenerate_cron_token')) {
+                $cron_routes->regenerate_secret_key();
+                echo '<div class="notice notice-success"><p>Token régénéré avec succès ! Actualisez la page pour voir le nouveau token.</p></div>';
+            }
+        }
     }
 }
 

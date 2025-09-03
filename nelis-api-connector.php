@@ -18,6 +18,22 @@ require_once plugin_dir_path( __FILE__ ) . 'includes/class-nelis-api-shortcode.p
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-brevo-connector.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-contact-synchronizer.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/class-nelis-brevo-synch-admin.php';
+// Charger les routes de cron seulement après l'initialisation de WordPress
+add_action('init', function() {
+    require_once plugin_dir_path( __FILE__ ) . 'includes/class-nelis-brevo-cron-routes.php';
+});
+
+// Hook pour activer le flush des règles de réécriture à l'activation du plugin
+register_activation_hook(__FILE__, function() {
+    // Forcer le rechargement des règles de réécriture
+    delete_option('nelis_brevo_rewrite_rules_flushed');
+});
+
+// Hook pour désactiver et nettoyer à la désactivation
+register_deactivation_hook(__FILE__, function() {
+    delete_option('nelis_brevo_rewrite_rules_flushed');
+    flush_rewrite_rules();
+});
 
 // Ajouter un cron job pour la sync automatique
 function nelis_brevo_schedule_sync() {
