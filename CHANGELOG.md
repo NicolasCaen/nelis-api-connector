@@ -1,5 +1,27 @@
 # Changelog - Nelis API Connector
 
+## Version 1.2.1 - 2025-09-03
+
+### 🐛 Corrections
+
+#### Problèmes d'initialisation des classes
+- **Résolu** : Double instanciation de `NelisBrevoSyncAdmin` qui causait des conflits
+- **Résolu** : Page "Tâches Cron" inaccessible (erreur 404)
+- **Amélioré** : Ordre d'initialisation des classes admin pour éviter les dépendances manquantes
+
+#### Optimisations techniques
+- Séparation de l'initialisation des classes générales et admin
+- Utilisation du hook `init` au lieu de `plugins_loaded` pour les classes admin
+- Ajout de vérifications `is_admin()` appropriées
+
+### 🔧 Modifications techniques
+
+#### Fichiers modifiés
+- `nelis-api-connector.php` - Correction de l'initialisation des classes
+- `class-nelis-brevo-synch-admin.php` - Suppression de la double instanciation
+
+---
+
 ## Version 1.2 - 2025-09-03
 
 ### 🎉 Nouvelles fonctionnalités
