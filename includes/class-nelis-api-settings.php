@@ -6,8 +6,9 @@
 class Nelis_API_Settings {
 
     public function __construct() {
-        add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
-        add_action( 'admin_init', array( $this, 'settings_init' ) );
+        // Désactiver la page d'administration
+        // add_action( 'admin_menu', array( $this, 'add_admin_menu' ) );
+        // add_action( 'admin_init', array( $this, 'settings_init' ) );
         add_action('wp_ajax_nelis_brevo_sync', [$this, 'ajax_sync']);
     }
 

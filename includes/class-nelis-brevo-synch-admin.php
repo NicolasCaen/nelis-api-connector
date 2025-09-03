@@ -312,23 +312,6 @@ class NelisBrevoSyncAdmin {
             }
         }
         
-        // Traitement du formulaire de configuration des champs cachés
-        if (isset($_POST['action']) && $_POST['action'] === 'update_hidden_fields') {
-            check_admin_referer('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce');
-            $hidden_fields = isset($_POST['hidden_fields']) ? (array) $_POST['hidden_fields'] : [];
-            update_option('nelis_brevo_hidden_fields', $hidden_fields);
-            $this->hidden_fields = $hidden_fields;
-            add_settings_error('nelis_brevo_sync', 'fields_updated', 'Configuration des champs mise à jour', 'success');
-        }
-        
-        // Traitement du formulaire de configuration du champ de filtre par date
-        if (isset($_POST['action']) && $_POST['action'] === 'update_date_filter') {
-            check_admin_referer('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce');
-            $date_filter_field = isset($_POST['date_filter_field']) ? sanitize_text_field($_POST['date_filter_field']) : 'custom_80';
-            update_option('nelis_brevo_date_filter_field', $date_filter_field);
-            $this->date_filter_field = $date_filter_field;
-            add_settings_error('nelis_brevo_sync', 'date_filter_updated', 'Configuration du filtre par date mise à jour', 'success');
-        }
         
         ?>
         <div class="wrap">
@@ -350,13 +333,13 @@ class NelisBrevoSyncAdmin {
                 <div class="stat-box">
                     <h3>Actions</h3>
                     <p>
-                        <button class="button button-primary sync-button" data-sync-type="incremental" data-original-text="Synchronisation incrémentielle">
-                            Synchronisation incrémentielle
+                        <button class="button button-primary sync-button" data-sync-type="full" data-original-text="Synchronisation complète">
+                            Synchronisation complète
                         </button>
                     </p>
                     <p>
-                        <button class="button sync-button" data-sync-type="full" data-original-text="Synchronisation complète">
-                            Synchronisation complète
+                        <button class="button sync-button" data-sync-type="incremental" data-original-text="Synchronisation incrémentielle">
+                            Synchronisation incrémentielle
                         </button>
                     </p>
                     <p>
@@ -369,6 +352,7 @@ class NelisBrevoSyncAdmin {
                             Vérifier la synchronisation avec Brevo
                         </button>
                     </p>
+
                     <p>
                         <button class="button button-secondary sync-button" data-sync-type="clean" data-original-text="Supprimer de Brevo les contacts absents localement">
                             Supprimer de Brevo les contacts absents localement
@@ -396,46 +380,6 @@ class NelisBrevoSyncAdmin {
                         </form>
                     </p>
                     
-                    <!-- Configuration des champs cachés -->
-                    <?php if (!empty($custom_fields)): ?>
-                    <div style="margin-top: 20px;">
-                        <h4>Configuration des champs personnalisés</h4>
-                        <form method="post" action="">
-                            <?php wp_nonce_field('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce'); ?>
-                            <input type="hidden" name="action" value="update_hidden_fields">
-                            <p>Sélectionnez les champs à masquer:</p>
-                            <?php foreach ($custom_fields as $field): ?>
-                                <?php $field_name = str_replace('custom_', '', $field); ?>
-                                <label style="display: block; margin-bottom: 5px;">
-                                    <input type="checkbox" name="hidden_fields[]" value="<?php echo esc_attr($field); ?>" 
-                                        <?php checked(in_array($field, $this->hidden_fields)); ?>>
-                                    <?php echo esc_html($field_name); ?>
-                                </label>
-                            <?php endforeach; ?>
-                            <p><input type="submit" class="button" value="Enregistrer la configuration"></p>
-                        </form>
-                    </div>
-                    
-                    <!-- Configuration du filtre par date -->
-                    <div style="margin-top: 20px;">
-                        <h4>Filtre par date</h4>
-                        <form method="post" action="">
-                            <?php wp_nonce_field('nelis_brevo_sync_action', 'nelis_brevo_sync_nonce'); ?>
-                            <input type="hidden" name="action" value="update_date_filter">
-                            <p>Sélectionnez le champ date pour filtrer les contacts (format YYYY-MM-DD):</p>
-                            <select name="date_filter_field">
-                                <?php foreach ($custom_fields as $field): ?>
-                                    <?php $field_name = str_replace('custom_', '', $field); ?>
-                                    <option value="<?php echo esc_attr($field); ?>" <?php selected($field, $this->date_filter_field); ?>>
-                                        <?php echo esc_html($field_name); ?>
-                                    </option>
-                                <?php endforeach; ?>
-                            </select>
-                            <p class="description">Les contacts seront synchronisés uniquement si ce champ contient une date valide au format YYYY-MM-DD et que cette date est inférieure à un an par rapport à aujourd'hui.</p>
-                            <p><input type="submit" class="button" value="Enregistrer la configuration"></p>
-                        </form>
-                    </div>
-                    <?php endif; ?>
                 </div>
             </div>
             

@@ -11,8 +11,9 @@ class BrevoConnector
     public function __construct()
     {
         if (is_admin()) {
-            add_action('admin_menu', [$this, 'add_admin_menu']);
-            add_action('admin_init', [$this, 'settings_init']);
+            // Désactiver la page d'administration
+            // add_action('admin_menu', [$this, 'add_admin_menu']);
+            // add_action('admin_init', [$this, 'settings_init']);
         }
     }
 
