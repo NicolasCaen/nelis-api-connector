@@ -1,5 +1,40 @@
 # Changelog - Nelis API Connector
 
+## Version 1.4 - 2025-09-03
+
+### 🚀 Nouvelles fonctionnalités
+- **API REST WordPress pour les URLs Cron** : Migration complète vers l'API REST native WordPress
+- **URLs Cron sécurisées et fiables** : Nouveau système d'authentification par token pour les tâches automatisées
+- **Interface d'administration des URLs Cron** : Page dédiée avec génération automatique des URLs et exemples d'utilisation
+
+### 🔧 Améliorations majeures
+- **Stabilité des URLs** : Remplacement des règles de réécriture personnalisées par des endpoints REST API
+- **Token de sécurité persistant** : Le token ne se régénère plus automatiquement à chaque chargement
+- **Documentation intégrée** : Exemples complets pour crontab, wget, PowerShell et curl
+- **Réponses JSON standardisées** : Format uniforme pour toutes les réponses API
+
+### 🛠️ Corrections techniques
+- **Résolution des erreurs 404** : Les URLs cron fonctionnent maintenant correctement
+- **Correction "rest_forbidden"** : Authentification manuelle implémentée pour contourner les restrictions WordPress
+- **Bouton de test admin corrigé** : URL de test générée correctement dans l'interface d'administration
+- **Namespace REST API** : `nelis-brevo/v1` pour une meilleure organisation
+
+### 📋 Nouvelles URLs disponibles
+- `/wp-json/nelis-brevo/v1/status?token={token}` - Statut de synchronisation
+- `/wp-json/nelis-brevo/v1/sync-incremental?token={token}` - Synchronisation incrémentale
+- `/wp-json/nelis-brevo/v1/sync-all?token={token}` - Synchronisation complète
+- `/wp-json/nelis-brevo/v1/fetch-nelis?token={token}` - Récupération depuis Nelis
+- `/wp-json/nelis-brevo/v1/verify-status?token={token}` - Vérification des statuts
+- `/wp-json/nelis-brevo/v1/clean-brevo?token={token}` - Nettoyage Brevo
+- `/wp-json/nelis-brevo/v1/clean-old?token={token}` - Suppression des anciens contacts
+
+### 🔒 Sécurité renforcée
+- **Authentification par token sécurisée** : Utilisation de `hash_equals()` pour éviter les attaques de timing
+- **Token stable** : Plus de régénération automatique intempestive
+- **Validation des paramètres** : Contrôle strict des actions autorisées
+
+---
+
 ## Version 1.3 - 2025-01-03
 
 ### 🚀 Nouvelles fonctionnalités
