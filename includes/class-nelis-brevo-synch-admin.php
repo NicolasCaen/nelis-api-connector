@@ -23,24 +23,47 @@ class NelisBrevoSyncAdmin {
         
         add_action('admin_menu', [$this, 'add_admin_menu']);
         add_action('admin_init', [$this, 'handle_actions']);
+        add_action('admin_init', [$this, 'register_settings']);
         add_action('wp_ajax_nelis_brevo_sync', [$this, 'ajax_sync']);
         add_action('wp_ajax_retry_failed_contacts', [$this, 'ajax_retry_failed']);
         add_action('admin_enqueue_scripts', [$this, 'enqueue_scripts']);
     }
     
     public function add_admin_menu() {
-        add_submenu_page(
-            'options-general.php',
-            'Synchronisation Nelis-Brevo',
-            'Sync Nelis-Brevo',
+        // Page principale du plugin
+        add_menu_page(
+            'Nelis-Brevo Sync',
+            'Nelis-Brevo',
             'manage_options',
             'nelis-brevo-sync',
-            [$this, 'admin_page']
+            [$this, 'synchronization_page'],
+            'dashicons-update',
+            30
+        );
+        
+        // Sous-page Synchronisation (par défaut)
+        add_submenu_page(
+            'nelis-brevo-sync',
+            'Synchronisation',
+            'Synchronisation',
+            'manage_options',
+            'nelis-brevo-sync',
+            [$this, 'synchronization_page']
+        );
+        
+        // Sous-page Réglages
+        add_submenu_page(
+            'nelis-brevo-sync',
+            'Réglages Nelis-Brevo',
+            'Réglages',
+            'manage_options',
+            'nelis-brevo-settings',
+            [$this, 'settings_page']
         );
     }
     
     public function enqueue_scripts($hook) {
-        if ($hook !== 'settings_page_nelis-brevo-sync') {
+        if (!in_array($hook, ['toplevel_page_nelis-brevo-sync', 'nelis-brevo_page_nelis-brevo-settings'])) {
             return;
         }
         
@@ -802,6 +825,153 @@ class NelisBrevoSyncAdmin {
             $this->log("Erreur de synchronisation: " . $e->getMessage());
             wp_send_json_error($e->getMessage());
         }
+    }
+    
+    /**
+     * Renommer la méthode admin_page en synchronization_page
+     */
+    public function synchronization_page() {
+        $this->admin_page();
+    }
+    
+    /**
+     * Enregistrer les paramètres WordPress
+     */
+    public function register_settings() {
+        // Utiliser les noms d'options existants pour la compatibilité
+        register_setting('nelis_brevo_settings', 'nelis_brevo_hidden_fields');
+        register_setting('nelis_brevo_settings', 'nelis_brevo_date_filter_field');
+        register_setting('nelis_brevo_settings', 'nelis_brevo_last_sync');
+        
+        // Pour les API keys, utiliser le système existant de BrevoConnector
+        register_setting('nelis_brevo_settings', 'brevo_config');
+        register_setting('nelis_brevo_settings', 'nelis_api_client_id');
+        register_setting('nelis_brevo_settings', 'nelis_api_client_secret');
+        register_setting('nelis_brevo_settings', 'nelis_api_username');
+        register_setting('nelis_brevo_settings', 'nelis_api_password');
+    }
+    
+    /**
+     * Page des réglages
+     */
+    public function settings_page() {
+        ?>
+        <div class="wrap">
+            <h1>Réglages Nelis-Brevo</h1>
+            
+            <form method="post" action="options.php">
+                <?php
+                settings_fields('nelis_brevo_settings');
+                do_settings_sections('nelis_brevo_settings');
+                ?>
+                
+                <h2>Configuration Brevo</h2>
+                <?php
+                $brevo_options = get_option('brevo_config', []);
+                ?>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">Clé API Brevo</th>
+                        <td>
+                            <input type="password" name="brevo_config[brevo_api_key]" value="<?php echo esc_attr($brevo_options['brevo_api_key'] ?? ''); ?>" class="regular-text" />
+                            <p class="description">Votre clé API Brevo (ex-Sendinblue)</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">ID de la liste Brevo</th>
+                        <td>
+                            <input type="number" name="brevo_config[brevo_list_id]" value="<?php echo esc_attr($brevo_options['brevo_list_id'] ?? ''); ?>" class="regular-text" />
+                            <p class="description">L'ID de la liste Brevo où synchroniser les contacts</p>
+                        </td>
+                    </tr>
+                </table>
+                
+                <h2>Configuration Nelis</h2>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">Client ID</th>
+                        <td>
+                            <input type="text" name="nelis_api_client_id" value="<?php echo esc_attr(get_option('nelis_api_client_id')); ?>" class="regular-text" />
+                            <p class="description">Client ID de l'API Nelis</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Client Secret</th>
+                        <td>
+                            <input type="password" name="nelis_api_client_secret" value="<?php echo esc_attr(get_option('nelis_api_client_secret')); ?>" class="regular-text" />
+                            <p class="description">Client Secret de l'API Nelis</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Nom d'utilisateur</th>
+                        <td>
+                            <input type="text" name="nelis_api_username" value="<?php echo esc_attr(get_option('nelis_api_username')); ?>" class="regular-text" />
+                            <p class="description">Nom d'utilisateur Nelis</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Mot de passe</th>
+                        <td>
+                            <input type="password" name="nelis_api_password" value="<?php echo esc_attr(get_option('nelis_api_password')); ?>" class="regular-text" />
+                            <p class="description">Mot de passe Nelis</p>
+                        </td>
+                    </tr>
+                </table>
+                
+                <h2>Configuration des champs personnalisés</h2>
+                <?php
+                // Récupérer la structure de la table
+                global $wpdb;
+                $table_name = $wpdb->prefix . 'nelis_brevo_sync';
+                $table_structure = $wpdb->get_results("SHOW COLUMNS FROM $table_name");
+                $custom_fields = [];
+                
+                if ($table_structure) {
+                    foreach ($table_structure as $column) {
+                        if (strpos($column->Field, 'custom_') === 0) {
+                            $custom_fields[] = $column->Field;
+                        }
+                    }
+                }
+                ?>
+                
+                <?php if (!empty($custom_fields)): ?>
+                <table class="form-table">
+                    <tr>
+                        <th scope="row">Champs masqués</th>
+                        <td>
+                            <?php foreach ($custom_fields as $field): ?>
+                                <?php $field_name = str_replace('custom_', '', $field); ?>
+                                <label style="display: block; margin-bottom: 5px;">
+                                    <input type="checkbox" name="nelis_brevo_hidden_fields[]" value="<?php echo esc_attr($field); ?>" 
+                                        <?php checked(in_array($field, get_option('nelis_brevo_hidden_fields', []))); ?>>
+                                    <?php echo esc_html($field_name); ?>
+                                </label>
+                            <?php endforeach; ?>
+                            <p class="description">Sélectionnez les champs à masquer dans l'interface de synchronisation</p>
+                        </td>
+                    </tr>
+                    <tr>
+                        <th scope="row">Champ de filtre par date</th>
+                        <td>
+                            <select name="nelis_brevo_date_filter_field">
+                                <?php foreach ($custom_fields as $field): ?>
+                                    <?php $field_name = str_replace('custom_', '', $field); ?>
+                                    <option value="<?php echo esc_attr($field); ?>" <?php selected($field, get_option('nelis_brevo_date_filter_field', 'custom_80')); ?>>
+                                        <?php echo esc_html($field_name); ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+                            <p class="description">Champ utilisé pour filtrer les contacts par date (format YYYY-MM-DD, contacts de moins d'un an)</p>
+                        </td>
+                    </tr>
+                </table>
+                <?php endif; ?>
+                
+                <?php submit_button(); ?>
+            </form>
+        </div>
+        <?php
     }
 }
 
