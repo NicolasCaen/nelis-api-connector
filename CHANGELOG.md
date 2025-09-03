@@ -1,6 +1,27 @@
 # Changelog - Nelis API Connector
 
-## Version 1.4 - 2025-09-03
+## Changelog
+
+## [1.4.1] - 2025-01-08
+
+### Ajouté
+- **Export CSV** : Bouton d'export CSV pour le tableau des contacts dans la page de synchronisation
+- **Interface responsive** : Conteneur recherche/export adaptatif pour les écrans mobiles
+
+### Amélioré
+- **Design moderne** : Refonte complète de l'interface de synchronisation avec le même design que la page de réglages
+- **Cartes visuelles** : Statistiques et actions organisées en cartes avec en-têtes colorés et effets de survol
+- **Boutons d'action** : Nouveaux boutons avec icônes et gradients pour une meilleure UX
+- **Tableau stylisé** : Amélioration du design du tableau des contacts avec hover effects
+- **Badges de statut** : Mise à jour des couleurs et de la typographie pour les statuts de contact
+
+### Technique
+- **Export côté client** : Fonctionnalité d'export JavaScript sans requête serveur
+- **Filtrage respecté** : L'export CSV respecte les filtres de recherche appliqués
+- **Nommage automatique** : Fichiers CSV avec horodatage automatique
+- **Encodage UTF-8** : Support complet des caractères spéciaux dans l'export
+
+## [1.4] - 2025-09-03
 
 ### 🚀 Nouvelles fonctionnalités
 - **API REST WordPress pour les URLs Cron** : Migration complète vers l'API REST native WordPress
